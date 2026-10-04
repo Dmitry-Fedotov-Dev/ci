@@ -32,7 +32,7 @@ RUN --mount=type=secret,id=ca,mode=0444 \
  && go install "github.com/rhysd/actionlint/cmd/actionlint@${VER_ACTIONLINT}"
 
 # python:3.12 (full Debian): python3 for the summaries, git, and gcc for go test -race
-FROM python:3.12-trixie
+FROM python:3.14-trixie
 COPY --from=go /usr/local/go /usr/local/go
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=shellcheck /bin/shellcheck /usr/local/bin/shellcheck
