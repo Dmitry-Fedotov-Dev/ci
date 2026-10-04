@@ -55,6 +55,8 @@ runs:
         go install github.com/securego/gosec/v2/cmd/gosec@latest
         nofail=-no-fail; [ "$FAIL" = true ] && nofail=
         # shellcheck disable=SC2086
-        gosec -quiet $nofail $EXTRA -fmt json -out gosec.json $PKGS || status=$?
+        # no -quiet: with it gosec writes no report at all when there are no findings
+        gosec $nofail $EXTRA -fmt json -out gosec.json $PKGS || status=$?
+        [ -f gosec.json ] || { echo "::error::gosec wrote no report (exit ${status:-0})"; exit 1; }
         python3 "$S" --lang "$LANG_" gosec gosec.json >> "$GITHUB_STEP_SUMMARY"
         exit "${status:-0}"
