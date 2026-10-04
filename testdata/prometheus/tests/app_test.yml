@@ -1,0 +1,13 @@
+rule_files:
+  - ../rules/app.yml
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'up{job="app",instance="a"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: AppDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: app, instance: a }

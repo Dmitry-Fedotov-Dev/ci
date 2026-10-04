@@ -1,0 +1,11 @@
+{"metrics":{
+ "sip_call_success":{"passes":118,"fails":2,"value":0.9833,"thresholds":{"rate>0.99":true}},
+ "sip_call_results":{"count":120,"rate":1.0},
+ "sip_call_setup_time":{"p(95)":42.5,"thresholds":{"p(95)<300":false}},
+ "rtp_audio_heard":{"value":1,"thresholds":{"rate>0.99":false}},
+ "rtp_audio_score":{"med":0.91,"min":0.82,"p(95)":0.95,"thresholds":{"med>0.8":false}},
+ "rtp_jitter":{"p(95)":3.1},
+ "rtp_packets_received":{"count":120000},"rtp_packets_lost":{"count":12},
+ "kontakt_peer_heard":{"value":0.97,"thresholds":{"rate>0.9":false}},
+ "checks":{"passes":480,"fails":2,"value":0.99,"thresholds":{"rate>0.99":false}}
+}}

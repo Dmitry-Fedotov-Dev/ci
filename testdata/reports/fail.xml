@@ -1,0 +1,1 @@
+<testsuites><testsuite name="fail"><testcase name="call answered"/><testcase name="peer heard"><failure message="no audio"/></testcase><testcase name="threshold checks rate==1"><failure/></testcase></testsuite></testsuites>

@@ -1,0 +1,54 @@
+name: k6 summary
+description: >-
+  Markdown summary of k6 functional (JUnit) or load (--summary-export) results for the run page
+  ($GITHUB_STEP_SUMMARY), the job log and a file for the artifact.
+inputs:
+  kind:
+    description: functional or load.
+    required: true
+  reports:
+    description: functional — directory with <scenario>.xml; load — path to summary.json.
+    required: true
+  scenarios:
+    description: functional — scenario names separated by spaces.
+    default: ""
+  title:
+    description: load — one line describing the run.
+    default: ""
+  note:
+    description: load — a closing line, e.g. where the dashboard PNG is.
+    default: ""
+  lang:
+    description: en or ru.
+    default: en
+  output:
+    description: File for the full summary (all steps); empty to skip.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        S: ${{ github.action_path }}/../../scripts/summary.py
+        KIND: ${{ inputs.kind }}
+        REPORTS: ${{ inputs.reports }}
+        SCENARIOS: ${{ inputs.scenarios }}
+        TITLE: ${{ inputs.title }}
+        NOTE: ${{ inputs.note }}
+        LANG_: ${{ inputs.lang }}
+        OUT: ${{ inputs.output }}
+      run: |
+        case "$KIND" in
+          functional)
+            [ -d "$REPORTS" ] || mkdir -p "$REPORTS"
+            # shellcheck disable=SC2086 # scenarios are a word list
+            python3 "$S" --lang "$LANG_" functional "$REPORTS" $SCENARIOS
+            # shellcheck disable=SC2086
+            python3 "$S" --lang "$LANG_" functional --all-steps "$REPORTS" $SCENARIOS > "${OUT:-/tmp/k6-summary.md}" ;;
+          load)
+            if [ ! -f "$REPORTS" ]; then echo "no $REPORTS: k6 did not finish"; exit 0; fi
+            python3 "$S" --lang "$LANG_" load "$REPORTS" "$TITLE" "$NOTE" > "${OUT:-/tmp/k6-summary.md}"
+            cat "${OUT:-/tmp/k6-summary.md}" ;;
+          *) echo "::error title=k6-summary::kind must be functional or load"; exit 1 ;;
+        esac
+        cat "${OUT:-/tmp/k6-summary.md}" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,60 @@
+# Reusable workflow: gofmt, go vet and go test for a Go module.
+#
+#   jobs:
+#     go:
+#       uses: Dmitry-Fedotov-Dev/ci/.github/workflows/go.yml@v1
+#       with:
+#         test-flags: -race -count=2
+name: go
+
+on:
+  workflow_call:
+    inputs:
+      go-version-file:
+        description: Path to go.mod that pins the Go version (ignored when go-version is set).
+        type: string
+        default: go.mod
+      go-version:
+        description: Go version instead of go.mod, e.g. stable.
+        type: string
+        default: ""
+      working-directory:
+        description: Module directory.
+        type: string
+        default: .
+      packages:
+        description: Packages for vet and test.
+        type: string
+        default: ./...
+      test-flags:
+        description: Flags for go test.
+        type: string
+        default: -race -count=1
+      gofmt:
+        description: Fail when gofmt -l lists files.
+        type: boolean
+        default: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ inputs.go-version }}
+          go-version-file: ${{ inputs.go-version == '' && format('{0}/{1}', inputs.working-directory, inputs.go-version-file) || '' }}
+      - name: gofmt
+        if: inputs.gofmt
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "::error title=gofmt::not formatted:"; echo "$files"; exit 1
+          fi
+      - name: vet
+        run: go vet ${{ inputs.packages }}
+      - name: test
+        run: go test ${{ inputs.test-flags }} ${{ inputs.packages }}

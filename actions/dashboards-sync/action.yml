@@ -1,0 +1,30 @@
+name: Generated dashboards in sync
+description: >-
+  Dashboards edited through a generator script must match the committed JSON: run each generator into
+  a temp file and compare.
+inputs:
+  pairs:
+    description: >-
+      One per line: "<generator.py> <committed.json>". The generator is called as
+      python3 <generator.py> <output.json>.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PAIRS: ${{ inputs.pairs }}
+      run: |
+        failed=0
+        while read -r gen json; do
+          [ -n "$gen" ] || continue
+          tmp=$(mktemp --suffix=.json)
+          python3 "$gen" "$tmp" >/dev/null
+          if ! diff -q "$tmp" "$json" >/dev/null; then
+            echo "::error file=$json,title=dashboards-sync::$json differs from $gen output — regenerate it"
+            failed=1
+          else
+            echo "in sync: $json"
+          fi
+        done <<< "$PAIRS"
+        exit $failed

@@ -1,0 +1,1 @@
+<testsuites><testsuite name="pass"><testcase name="call answered"/><testcase name="audio heard"/><testcase name="threshold checks rate==1"/></testsuite></testsuites>

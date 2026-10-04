@@ -1,0 +1,19 @@
+name: Inline JS syntax
+description: >-
+  node --check for .js files and inline <script> blocks of .html pages in the given directories —
+  pages embedded into a binary never meet a browser in CI.
+inputs:
+  paths:
+    description: Directories, separated by spaces or newlines.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        S: ${{ github.action_path }}/../../scripts/check_js.py
+        PATHS: ${{ inputs.paths }}
+      run: |
+        command -v node >/dev/null || { echo "::error title=inline-js::node is not installed"; exit 1; }
+        # shellcheck disable=SC2086
+        python3 "$S" $PATHS

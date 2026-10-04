@@ -1,0 +1,60 @@
+name: Go security
+description: >-
+  govulncheck (blocking by default; also scans the toolchain stdlib) and gosec (a report by default),
+  with a gosec summary on the run page and gosec.json for the artifact.
+inputs:
+  working-directory:
+    default: .
+  packages:
+    default: ./...
+  govulncheck:
+    description: true — fail on known vulnerabilities; false — skip.
+    default: "true"
+  gosec-fail:
+    description: true — fail on gosec findings; false — report only.
+    default: "false"
+  gosec-args:
+    description: Extra gosec arguments, e.g. -exclude=G115.
+    default: ""
+  go-version:
+    description: Go to set up; empty to keep the job's. Use stable so govulncheck sees a current stdlib.
+    default: stable
+  lang:
+    default: en
+outputs:
+  gosec-report:
+    description: Path of gosec.json.
+    value: ${{ inputs.working-directory }}/gosec.json
+runs:
+  using: composite
+  steps:
+    - if: inputs.go-version != ''
+      uses: actions/setup-go@v7
+      with:
+        go-version: ${{ inputs.go-version }}
+    - name: govulncheck
+      if: inputs.govulncheck == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PKGS: ${{ inputs.packages }}
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        # shellcheck disable=SC2086
+        govulncheck $PKGS
+    - name: gosec
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        S: ${{ github.action_path }}/../../scripts/summary.py
+        PKGS: ${{ inputs.packages }}
+        FAIL: ${{ inputs.gosec-fail }}
+        EXTRA: ${{ inputs.gosec-args }}
+        LANG_: ${{ inputs.lang }}
+      run: |
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        nofail=-no-fail; [ "$FAIL" = true ] && nofail=
+        # shellcheck disable=SC2086
+        gosec -quiet $nofail $EXTRA -fmt json -out gosec.json $PKGS || status=$?
+        python3 "$S" --lang "$LANG_" gosec gosec.json >> "$GITHUB_STEP_SUMMARY"
+        exit "${status:-0}"

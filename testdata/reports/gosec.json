@@ -1,0 +1,1 @@
+{"Issues":[{"rule_id":"G115","details":"integer overflow conversion int -> uint16"},{"rule_id":"G115","details":"integer overflow conversion int -> uint32"},{"rule_id":"G404","details":"Use of weak random number generator"}]}

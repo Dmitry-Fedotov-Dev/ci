@@ -1,0 +1,34 @@
+name: promtool
+description: >-
+  Check a Prometheus config (with its rule files) and run alert rule unit tests, using promtool from
+  the same Prometheus image the project runs.
+inputs:
+  dir:
+    description: Directory mounted as /etc/prometheus (holds the config, rules and tests).
+    default: monitoring/prometheus
+  config:
+    description: Config file relative to dir; empty to skip the check.
+    default: prometheus.yml
+  rule-tests:
+    description: Rule test files relative to dir, separated by spaces or newlines.
+    default: ""
+  image:
+    default: prom/prometheus:v3.5.0
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        DIR: ${{ inputs.dir }}
+        CONFIG: ${{ inputs.config }}
+        TESTS: ${{ inputs.rule-tests }}
+        IMG: ${{ inputs.image }}
+      run: |
+        dir=$(cd "$DIR" && pwd)
+        if [ -n "$CONFIG" ]; then
+          docker run --rm -v "$dir:/etc/prometheus:ro" --entrypoint promtool "$IMG" check config "/etc/prometheus/$CONFIG"
+        fi
+        for t in $TESTS; do
+          docker run --rm -v "$dir:/etc/prometheus:ro" -w "/etc/prometheus/$(dirname "$t")" --entrypoint promtool "$IMG" \
+            test rules "$(basename "$t")"
+        done

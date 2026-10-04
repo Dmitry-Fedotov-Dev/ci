@@ -1,0 +1,50 @@
+name: xk6 build
+description: Build a k6 binary with extensions (for example xk6-sip) and print its version.
+inputs:
+  k6-version:
+    description: k6 release to build, e.g. v2.3.0.
+    default: v2.3.0
+  with:
+    description: >-
+      Extensions, one per line, as xk6 --with takes them:
+      github.com/Dmitry-Fedotov-Dev/xk6-sip@v0.4.0, or github.com/Dmitry-Fedotov-Dev/xk6-sip=. for the checked-out repo.
+    required: true
+  output:
+    description: Where to write the binary.
+    default: bin/k6
+  xk6-version:
+    description: xk6 version to install.
+    default: latest
+  go-version:
+    description: Go version to set up; empty to keep the one already set up by the job.
+    default: stable
+outputs:
+  path:
+    description: Path of the built binary.
+    value: ${{ inputs.output }}
+runs:
+  using: composite
+  steps:
+    - if: inputs.go-version != ''
+      uses: actions/setup-go@v7
+      with:
+        go-version: ${{ inputs.go-version }}
+    - name: xk6 build
+      shell: bash
+      env:
+        # not K6_VERSION / XK6_*: xk6 reads those from the environment as its own flags
+        IN_K6: ${{ inputs.k6-version }}
+        IN_WITH: ${{ inputs.with }}
+        IN_OUT: ${{ inputs.output }}
+        IN_XK6: ${{ inputs.xk6-version }}
+      run: |
+        go install "go.k6.io/xk6@$IN_XK6"
+        args=()
+        while IFS= read -r ext; do
+          ext="${ext#"${ext%%[![:space:]]*}"}"; ext="${ext%"${ext##*[![:space:]]}"}"
+          [ -n "$ext" ] && args+=(--with "$ext")
+        done <<< "$IN_WITH"
+        [ ${#args[@]} -gt 0 ] || { echo "::error title=xk6-build::input 'with' is empty"; exit 1; }
+        mkdir -p "$(dirname "$IN_OUT")"
+        xk6 build "$IN_K6" "${args[@]}" --output "$IN_OUT"
+        "./$IN_OUT" version 2>/dev/null || "$IN_OUT" version
