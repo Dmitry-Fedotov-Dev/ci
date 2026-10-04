@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Check a Prometheus config (with its rule files) and run alert rule unit tests.
+#
+#   bin/promtool [--dir monitoring/prometheus] [--config prometheus.yml | --no-config]
+#                [--rule-tests "tests/a_test.yml tests/b_test.yml"]
+#                [--mount /etc/prometheus] [--image prom/prometheus:v3.5.0]
+#
+# A config usually names its files by the path inside the container (rule_files:
+# /etc/prometheus/rules/*.yml). --mount is that path: with promtool on PATH (the prom/prometheus
+# image in GitLab, a laptop) it is replaced by --dir in a temporary copy of the config; without
+# promtool, --dir is mounted there in --image with docker (GitHub runners).
+set -euo pipefail
+# shellcheck source=../lib/ci.sh
+. "$(dirname "$0")/../lib/ci.sh"
+
+dir=monitoring/prometheus config=prometheus.yml tests="" mount=/etc/prometheus img=prom/prometheus:v3.5.0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --dir) dir=$2; shift 2 ;;
+    --config) config=$2; shift 2 ;;
+    --no-config) config=""; shift ;;
+    --rule-tests) tests=$2; shift 2 ;;
+    --mount) mount=$2; shift 2 ;;
+    --image) img=$2; shift 2 ;;
+    *) ci_error promtool "unknown argument $1"; exit 2 ;;
+  esac
+done
+dir=$(cd "$dir" && pwd)
+
+if command -v promtool >/dev/null; then
+  promtool --version 2>&1 | head -1
+  if [ -n "$config" ]; then
+    # next to the original, so relative paths in it resolve the same way
+    tmp=$(dirname "$dir/$config")/.promtool-$$.yml
+    trap 'rm -f "$tmp"' EXIT
+    sed "s#$mount/#$dir/#g" "$dir/$config" >"$tmp"
+    promtool check config "$tmp"
+  fi
+  for t in $tests; do
+    (cd "$dir/$(dirname "$t")" && promtool test rules "$(basename "$t")")
+  done
+else
+  ci_need docker
+  p() { docker run --rm -v "$dir:$mount:ro" -w "$mount/$1" --entrypoint promtool "$img" "${@:2}"; }
+  [ -z "$config" ] || p . check config "$mount/$config"
+  for t in $tests; do
+    p "$(dirname "$t")" test rules "$(basename "$t")"
+  done
+fi

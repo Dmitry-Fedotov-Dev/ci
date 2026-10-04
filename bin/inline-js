@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# node --check for .js files and inline <script> blocks of .html pages — pages embedded into a
+# binary never meet a browser in CI. Fails when nothing was checked: a wrong path is an error too.
+#
+#   bin/inline-js <dir> [<dir>...]
+set -euo pipefail
+# shellcheck source=../lib/ci.sh
+. "$(dirname "$0")/../lib/ci.sh"
+[ $# -gt 0 ] || { ci_error inline-js "usage: inline-js <dir>..."; exit 2; }
+ci_need node python3
+exec python3 "$CIKIT_HOME/scripts/check_js.py" "$@"

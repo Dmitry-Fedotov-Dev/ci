@@ -11,9 +11,7 @@ runs:
   steps:
     - shell: bash
       env:
-        S: ${{ github.action_path }}/../../scripts/check_js.py
         PATHS: ${{ inputs.paths }}
       run: |
-        command -v node >/dev/null || { echo "::error title=inline-js::node is not installed"; exit 1; }
-        # shellcheck disable=SC2086
-        python3 "$S" $PATHS
+        # shellcheck disable=SC2086 # paths are a word list
+        "${{ github.action_path }}/../../bin/inline-js" $PATHS

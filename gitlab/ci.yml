@@ -1,0 +1,224 @@
+# GitLab CI templates: the same steps as the GitHub actions, run by the same bin/ scripts.
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/Dmitry-Fedotov-Dev/ci/v1/gitlab/ci.yml
+#     # or, from a mirror inside your GitLab (no internet needed):
+#     # - project: tools/ci
+#     #   ref: v1
+#     #   file: gitlab/ci.yml
+#
+#   variables:
+#     CIKIT_URL: https://gitlab.example.com/tools/ci.git   # only with a mirror
+#
+#   go:
+#     extends: .cikit-go
+#
+# Every template is a hidden job (its name starts with a dot): nothing runs until a job
+# extends it. Settings are CIKIT_* variables; set them in the job, or globally.
+#
+# How a job gets the scripts: GitLab includes YAML only, so before_script clones this
+# repository at CIKIT_REF into a temporary directory and puts it into $CIKIT. A job that needs
+# its own before_script keeps ours with:
+#   before_script:
+#     - !reference [.cikit, before_script]
+#     - your commands
+
+variables:
+  CIKIT_URL: https://github.com/Dmitry-Fedotov-Dev/ci.git
+  CIKIT_REF: v1
+  # Images. Full Debian images: they already have git, and most have python3.
+  # Tests: pin to your go.mod's Go (golang:1.24); golang:1 is the newest 1.x.
+  CIKIT_GO_IMAGE: golang:1
+  # Tools (govulncheck, gosec, xk6) need a current Go and scan with its stdlib, whatever the
+  # project pins — the GitHub actions use go-version: stable for the same reason.
+  CIKIT_GO_TOOLS_IMAGE: golang:1
+  CIKIT_PYTHON_IMAGE: python:3.12
+  CIKIT_NODE_IMAGE: node:22
+  CIKIT_PROMETHEUS_IMAGE: prom/prometheus:v3.5.0
+
+.cikit:
+  before_script:
+    - |
+      # CIKIT_LOCAL: use a checkout that is already here (the selftest of this repository)
+      cikit_pkgs() {
+        missing=""
+        for c in "$@"; do command -v "$c" >/dev/null || missing="$missing $c"; done
+        [ -z "$missing" ] && return 0
+        echo "installing:$missing"
+        if command -v apt-get >/dev/null; then
+          apt-get update -qq && apt-get install -yqq --no-install-recommends $missing ca-certificates >/dev/null
+        elif command -v apk >/dev/null; then
+          apk add --no-cache $missing >/dev/null
+        else
+          echo "no package manager to install$missing — use an image that has them"; return 1
+        fi
+      }
+      cikit_pkgs git bash
+      if [ -n "${CIKIT_LOCAL:-}" ]; then
+        CIKIT=$CIKIT_LOCAL
+      else
+        CIKIT=/tmp/cikit-$CI_JOB_ID
+        rm -rf "$CIKIT"
+        git -c advice.detachedHead=false clone -q --depth 1 --branch "$CIKIT_REF" "$CIKIT_URL" "$CIKIT"
+      fi
+      export CIKIT
+      if [ -n "${CIKIT_LOCAL:-}" ]; then echo "cikit: local copy $CIKIT"
+      else echo "cikit: $CIKIT_URL@$CIKIT_REF ($(git -C "$CIKIT" rev-parse --short HEAD))"; fi
+
+# --- Go ---------------------------------------------------------------------------------------
+
+.cikit-go-cache:
+  variables:
+    GOMODCACHE: $CI_PROJECT_DIR/.cache/gomod
+    GOCACHE: $CI_PROJECT_DIR/.cache/gobuild
+  cache:
+    key: cikit-go-$CI_JOB_NAME_SLUG
+    paths: [.cache/gomod, .cache/gobuild]
+
+# gofmt, go vet, go test. Test results go to the merge request (JUnit), coverage to the job.
+.cikit-go:
+  extends: [.cikit, .cikit-go-cache]
+  image: $CIKIT_GO_IMAGE
+  variables:
+    CIKIT_GO_DIR: .
+    CIKIT_GO_PACKAGES: ./...
+    CIKIT_GO_TEST_FLAGS: -race -count=1
+    CIKIT_GOFMT: "true"
+  script:
+    - |
+      args="--dir $CIKIT_GO_DIR --junit go-test.xml --coverage coverage.out"
+      [ "$CIKIT_GOFMT" = true ] || args="$args --no-gofmt"
+      "$CIKIT/bin/go-check" $args --packages "$CIKIT_GO_PACKAGES" --test-flags "$CIKIT_GO_TEST_FLAGS"
+  coverage: '/total coverage: (\d+(?:\.\d+)?)%/'
+  artifacts:
+    when: always
+    reports:
+      junit: go-test.xml
+    paths: [go-test.xml, coverage.out]
+    expire_in: 2 weeks
+
+# govulncheck (blocking) and gosec (findings in the merge request's Code Quality widget;
+# blocking only with CIKIT_GOSEC_FAIL: "true").
+.cikit-go-security:
+  extends: [.cikit, .cikit-go-cache]
+  image: $CIKIT_GO_TOOLS_IMAGE
+  variables:
+    CIKIT_GO_DIR: .
+    CIKIT_GO_PACKAGES: ./...
+    CIKIT_GOVULNCHECK: "true"
+    CIKIT_GOSEC_FAIL: "false"
+    CIKIT_GOSEC_ARGS: ""
+    CIKIT_LANG: en
+  script:
+    - cikit_pkgs python3
+    - |
+      set -- --dir "$CIKIT_GO_DIR" --packages "$CIKIT_GO_PACKAGES" --gosec-args "$CIKIT_GOSEC_ARGS" \
+        --lang "$CIKIT_LANG" --codequality gl-code-quality-report.json
+      [ "$CIKIT_GOVULNCHECK" = true ] || set -- "$@" --no-govulncheck
+      [ "$CIKIT_GOSEC_FAIL" != true ] || set -- "$@" --gosec-fail
+      "$CIKIT/bin/go-security" "$@"
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    # expose_as allows no variables in paths, so gosec.json stays out: the Code Quality
+    # report carries the same findings
+    paths: [ci-summary.md]
+    expose_as: gosec summary
+    expire_in: 2 weeks
+
+# --- k6 ---------------------------------------------------------------------------------------
+
+# A k6 binary with extensions, as an artifact for later jobs (needs: [k6]).
+#   CIKIT_XK6_WITH: one extension per line, as xk6 --with takes them
+#   (never name your variables K6_VERSION or XK6_*: xk6 reads those as its flags)
+.cikit-xk6-build:
+  extends: [.cikit, .cikit-go-cache]
+  image: $CIKIT_GO_TOOLS_IMAGE
+  variables:
+    CIKIT_K6_RELEASE: v2.3.0
+    CIKIT_XK6_WITH: ""
+    CIKIT_XK6_VERSION: latest
+    CIKIT_K6_OUTPUT: bin/k6
+  script:
+    - '"$CIKIT/bin/xk6-build" --k6 "$CIKIT_K6_RELEASE" --with "$CIKIT_XK6_WITH" --xk6 "$CIKIT_XK6_VERSION" --output "$CIKIT_K6_OUTPUT"'
+  artifacts:
+    paths: [$CIKIT_K6_OUTPUT]
+    expire_in: 1 week
+
+# Markdown summary of k6 results, exposed in the merge request. Usually you call the script at
+# the end of your own k6 job instead of a separate job:
+#   after_script:
+#     - !reference [.cikit, before_script]
+#     - $CIKIT/bin/k6-summary functional reports --scenarios "a b"
+# and publish reports/*.xml as artifacts:reports:junit — GitLab then shows each step as a test.
+.cikit-k6-summary:
+  extends: .cikit
+  image: $CIKIT_PYTHON_IMAGE
+  variables:
+    CIKIT_K6_KIND: functional
+    CIKIT_K6_REPORTS: reports
+    CIKIT_K6_SCENARIOS: ""
+    CIKIT_K6_TITLE: ""
+    CIKIT_K6_NOTE: ""
+    CIKIT_LANG: en
+  script:
+    - |
+      "$CIKIT/bin/k6-summary" "$CIKIT_K6_KIND" "$CIKIT_K6_REPORTS" --scenarios "$CIKIT_K6_SCENARIOS" \
+        --title "$CIKIT_K6_TITLE" --note "$CIKIT_K6_NOTE" --lang "$CIKIT_LANG"
+  artifacts:
+    when: always
+    paths: [ci-summary.md]
+    expose_as: k6 summary
+    expire_in: 2 weeks
+
+# --- web and monitoring -----------------------------------------------------------------------
+
+# node --check for .js files and inline <script> in .html under CIKIT_JS_PATHS (space-separated).
+.cikit-inline-js:
+  extends: .cikit
+  image: $CIKIT_NODE_IMAGE
+  variables:
+    CIKIT_JS_PATHS: ""
+  script:
+    - cikit_pkgs python3
+    - '"$CIKIT/bin/inline-js" $CIKIT_JS_PATHS'
+
+# promtool check config and rule unit tests, in the Prometheus image itself.
+.cikit-promtool:
+  extends: .cikit
+  image:
+    name: $CIKIT_PROMETHEUS_IMAGE
+    entrypoint: [""]
+  variables:
+    CIKIT_PROM_DIR: monitoring/prometheus
+    CIKIT_PROM_CONFIG: prometheus.yml
+    CIKIT_PROM_RULE_TESTS: ""
+    CIKIT_PROM_MOUNT: /etc/prometheus
+  # The Prometheus image is busybox: no git and no package manager to fetch bin/promtool with.
+  # This is bin/promtool's "promtool on PATH" branch; selftest runs both.
+  before_script: []
+  script:
+    - |
+      set -e
+      dir=$(cd "$CIKIT_PROM_DIR" && pwd)
+      promtool --version 2>&1 | head -1
+      if [ -n "$CIKIT_PROM_CONFIG" ]; then
+        tmp=$(dirname "$dir/$CIKIT_PROM_CONFIG")/.promtool-$$.yml
+        sed "s#$CIKIT_PROM_MOUNT/#$dir/#g" "$dir/$CIKIT_PROM_CONFIG" >"$tmp"
+        promtool check config "$tmp" || { rm -f "$tmp"; exit 1; }
+        rm -f "$tmp"
+      fi
+      for t in $CIKIT_PROM_RULE_TESTS; do
+        (cd "$dir/$(dirname "$t")" && promtool test rules "$(basename "$t")")
+      done
+
+# Generated Grafana dashboards match their generators.
+#   CIKIT_DASHBOARDS: "gen.py committed.json" pairs, space-separated
+.cikit-dashboards-sync:
+  extends: .cikit
+  image: $CIKIT_PYTHON_IMAGE
+  variables:
+    CIKIT_DASHBOARDS: ""
+  script:
+    - '"$CIKIT/bin/dashboards-sync" $CIKIT_DASHBOARDS'

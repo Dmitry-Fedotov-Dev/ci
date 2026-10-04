@@ -7,8 +7,11 @@
       from k6 --summary-export: key SIP/RTP metrics and every threshold
   summary.py [--lang en|ru] gosec <gosec.json> [<note>]
       gosec findings grouped by rule
+  summary.py codequality <gosec.json> [<repo root>]
+      gosec findings as a GitLab Code Quality report (Code Climate JSON) for merge requests
 """
 import collections
+import hashlib
 import json
 import os
 import sys
@@ -170,6 +173,27 @@ def gosec(path, note=""):
     return True
 
 
+def codequality(path, root=""):
+    """GitLab reads artifacts:reports:codequality; the fingerprint keeps a finding the same
+    finding between runs, so the merge request shows only new and fixed ones."""
+    sev = {"HIGH": "critical", "MEDIUM": "major", "LOW": "minor"}
+    root = os.path.abspath(root or os.getcwd()) + os.sep  # GitLab wants paths from the repo root
+    out = []
+    for i in json.load(open(path, encoding="utf-8")).get("Issues") or []:
+        file = i["file"][len(root):] if i["file"].startswith(root) else i["file"]
+        line = int(str(i.get("line", "1")).split("-")[0] or 1)
+        key = f'{i["rule_id"]}:{file}:{i.get("code", "").strip()}'
+        out.append({
+            "description": f'{i["rule_id"]}: {i["details"]}',
+            "check_name": i["rule_id"],
+            "fingerprint": hashlib.sha256(key.encode()).hexdigest(),
+            "severity": sev.get(i.get("severity", ""), "info"),
+            "location": {"path": file, "lines": {"begin": line}},
+        })
+    json.dump(out, sys.stdout, indent=1)
+    print()
+
+
 def main(argv):
     global L
     if len(argv) >= 2 and argv[0] == "--lang":
@@ -180,6 +204,8 @@ def main(argv):
         functional(args[0], args[1:], "--all-steps" in argv)
     elif len(argv) in (3, 4) and argv[0] == "load":
         load(argv[1], argv[2], argv[3] if len(argv) == 4 else "")
+    elif len(argv) in (2, 3) and argv[0] == "codequality":
+        codequality(argv[1], argv[2] if len(argv) == 3 else "")
     elif len(argv) in (2, 3) and argv[0] == "gosec":
         gosec(argv[1], argv[2] if len(argv) == 3 else "")
     else:

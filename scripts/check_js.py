@@ -32,6 +32,9 @@ for root, name in sorted((r, n) for r in sys.argv[1:] for n in os.listdir(r)):
         checked += 1
         if r.returncode != 0:
             failed += 1
-            print(f"::error title=js::{label}\n{r.stderr}")
+            if os.environ.get("GITHUB_ACTIONS"):
+                print(f"::error title=js::{label}\n{r.stderr}")
+            else:
+                print(f"ERROR [js] {label}\n{r.stderr}")
 print(f"scripts checked: {checked}, with errors: {failed}")
 sys.exit(1 if failed or not checked else 0)

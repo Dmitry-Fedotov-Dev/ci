@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Markdown summary of k6 results for the run summary, the job log and a file.
+#
+#   bin/k6-summary functional <reports dir> [--scenarios "a b"] [--lang en|ru] [--output f.md]
+#   bin/k6-summary load <summary.json> [--title "…"] [--note "…"] [--lang en|ru] [--output f.md]
+#
+# functional — from k6 JUnit reports (<dir>/<scenario>.xml): failed steps in the log, all steps in
+# the file. load — from k6 --summary-export: key metrics and every threshold. A missing load
+# report is not an error here: k6 did not finish, and its own step already failed.
+set -euo pipefail
+# shellcheck source=../lib/ci.sh
+. "$(dirname "$0")/../lib/ci.sh"
+
+kind=${1:-} reports=${2:-}
+if [ $# -lt 2 ]; then ci_error k6-summary "usage: k6-summary functional|load <reports> [options]"; exit 2; fi
+shift 2
+scenarios="" title="" note="" lang=en out=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --scenarios) scenarios=$2; shift 2 ;;
+    --title) title=$2; shift 2 ;;
+    --note) note=$2; shift 2 ;;
+    --lang) lang=$2; shift 2 ;;
+    --output) out=$2; shift 2 ;;
+    *) ci_error k6-summary "unknown argument $1"; exit 2 ;;
+  esac
+done
+ci_need python3
+S=$CIKIT_HOME/scripts/summary.py
+tmp=$(mktemp)
+case $kind in
+  functional)
+    mkdir -p "$reports"
+    # shellcheck disable=SC2086 # scenarios are a word list
+    python3 "$S" --lang "$lang" functional "$reports" $scenarios
+    # shellcheck disable=SC2086
+    python3 "$S" --lang "$lang" functional --all-steps "$reports" $scenarios >"$tmp" ;;
+  load)
+    if [ ! -f "$reports" ]; then echo "no $reports: k6 did not finish"; exit 0; fi
+    python3 "$S" --lang "$lang" load "$reports" "$title" "$note" >"$tmp"
+    cat "$tmp" ;;
+  *) ci_error k6-summary "kind must be functional or load"; exit 2 ;;
+esac
+ci_summary <"$tmp"
+[ -z "$out" ] || cp "$tmp" "$out"
+rm -f "$tmp"

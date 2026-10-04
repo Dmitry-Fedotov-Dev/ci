@@ -37,14 +37,4 @@ runs:
         IN_WITH: ${{ inputs.with }}
         IN_OUT: ${{ inputs.output }}
         IN_XK6: ${{ inputs.xk6-version }}
-      run: |
-        go install "go.k6.io/xk6@$IN_XK6"
-        args=()
-        while IFS= read -r ext; do
-          ext="${ext#"${ext%%[![:space:]]*}"}"; ext="${ext%"${ext##*[![:space:]]}"}"
-          [ -n "$ext" ] && args+=(--with "$ext")
-        done <<< "$IN_WITH"
-        [ ${#args[@]} -gt 0 ] || { echo "::error title=xk6-build::input 'with' is empty"; exit 1; }
-        mkdir -p "$(dirname "$IN_OUT")"
-        xk6 build "$IN_K6" "${args[@]}" --output "$IN_OUT"
-        "./$IN_OUT" version 2>/dev/null || "$IN_OUT" version
+      run: '"${{ github.action_path }}/../../bin/xk6-build" --k6 "$IN_K6" --with "$IN_WITH" --output "$IN_OUT" --xk6 "$IN_XK6"'

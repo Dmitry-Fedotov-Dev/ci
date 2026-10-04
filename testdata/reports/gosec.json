@@ -1,1 +1,5 @@
-{"Issues":[{"rule_id":"G115","details":"integer overflow conversion int -> uint16"},{"rule_id":"G115","details":"integer overflow conversion int -> uint32"},{"rule_id":"G404","details":"Use of weak random number generator"}]}
+{"Issues":[
+ {"severity":"HIGH","confidence":"MEDIUM","rule_id":"G115","details":"integer overflow conversion int -> uint16","file":"/work/internal/rtp/rtp.go","code":"42: seq := uint16(n)\n","line":"42","column":"9"},
+ {"severity":"HIGH","confidence":"MEDIUM","rule_id":"G115","details":"integer overflow conversion int -> uint32","file":"/work/internal/rtp/rtp.go","code":"57: ts := uint32(t)\n","line":"57","column":"8"},
+ {"severity":"MEDIUM","confidence":"HIGH","rule_id":"G404","details":"Use of weak random number generator (math/rand or math/rand/v2 instead of crypto/rand)","file":"/work/cmd/x/main.go","code":"9: r := rand.Intn(10)\n","line":"9-10","column":"7"}
+],"Stats":{"files":3,"lines":120,"nosec":0,"found":3}}

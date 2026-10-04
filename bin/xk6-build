@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Build a k6 binary with extensions and print its version.
+#
+#   bin/xk6-build --with github.com/Dmitry-Fedotov-Dev/xk6-sip@v0.4.0 [--with …] \
+#                 [--k6 v2.3.0] [--output bin/k6] [--xk6 latest]
+#
+# --with takes what `xk6 --with` takes: module@version, or module=. for the checked-out repo.
+# Several extensions: repeat --with, or put them one per line in a single value.
+# Our own variables are never named K6_VERSION or XK6_*: xk6 reads those as its flags.
+set -euo pipefail
+# shellcheck source=../lib/ci.sh
+. "$(dirname "$0")/../lib/ci.sh"
+
+k6=v2.3.0 out=bin/k6 xk6=latest args=()
+while [ $# -gt 0 ]; do
+  case $1 in
+    --with)
+      while IFS= read -r ext; do
+        ext="${ext#"${ext%%[![:space:]]*}"}"; ext="${ext%"${ext##*[![:space:]]}"}"
+        [ -z "$ext" ] || args+=(--with "$ext")
+      done <<<"$2"
+      shift 2 ;;
+    --k6) k6=$2; shift 2 ;;
+    --output) out=$2; shift 2 ;;
+    --xk6) xk6=$2; shift 2 ;;
+    *) ci_error xk6-build "unknown argument $1"; exit 2 ;;
+  esac
+done
+[ ${#args[@]} -gt 0 ] || { ci_error xk6-build "no extensions: pass --with"; exit 2; }
+ci_need go
+
+unset K6_VERSION XK6_K6_VERSION XK6_BUILD_FLAGS XK6_RACE_DETECTOR
+ci_go_install "go.k6.io/xk6@$xk6"
+mkdir -p "$(dirname "$out")"
+xk6 build "$k6" "${args[@]}" --output "$out"
+case $out in /*) "$out" version ;; *) "./$out" version ;; esac

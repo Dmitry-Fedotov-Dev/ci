@@ -1,0 +1,79 @@
+# Selftest of the GitLab templates, against testdata/ — the same checks as
+# .github/workflows/selftest.yml. Runs here when the repository is mirrored into a GitLab,
+# Checks are in script, not after_script: GitLab ignores after_script failures.
+# Locally: gitlab-ci-local (https://github.com/firecow/gitlab-ci-local) in a Docker host.
+include:
+  - local: gitlab/ci.yml
+
+variables:
+  CIKIT_LOCAL: $CI_PROJECT_DIR # the templates from this commit, not from CIKIT_REF
+
+stages: [test]
+
+go:
+  extends: .cikit-go
+  variables:
+    CIKIT_GO_DIR: testdata/gomod
+    CIKIT_GO_TEST_FLAGS: -race -count=2
+  script:
+    - !reference [.cikit-go, script]
+    - grep -q '<testcase' go-test.xml
+
+go-security:
+  extends: .cikit-go-security
+  variables:
+    CIKIT_GO_DIR: testdata/gomod
+  script:
+    - !reference [.cikit-go-security, script]
+    - test -f testdata/gomod/gosec.json
+    - grep -q '^\[' gl-code-quality-report.json
+
+xk6-build:
+  extends: .cikit-xk6-build
+  variables:
+    CIKIT_XK6_WITH: github.com/Dmitry-Fedotov-Dev/xk6-sip@v0.4.0
+    CIKIT_K6_OUTPUT: build/k6 # not bin/: that is where this repository keeps its scripts
+  script:
+    - !reference [.cikit-xk6-build, script]
+    - build/k6 version | grep -i sip
+
+k6-summary-functional:
+  extends: .cikit-k6-summary
+  variables:
+    CIKIT_K6_REPORTS: testdata/reports
+    CIKIT_K6_SCENARIOS: pass fail
+  script:
+    - !reference [.cikit-k6-summary, script]
+    - grep -q "1 of 2 scenarios failed" ci-summary.md
+    - grep -q "peer heard" ci-summary.md
+
+k6-summary-load:
+  extends: .cikit-k6-summary
+  variables:
+    CIKIT_K6_KIND: load
+    CIKIT_K6_REPORTS: testdata/reports/summary.json
+    CIKIT_K6_TITLE: selftest load
+    CIKIT_LANG: ru
+  script:
+    - !reference [.cikit-k6-summary, script]
+    - grep -q "пробито 1 из 6 порогов" ci-summary.md
+
+inline-js:
+  extends: .cikit-inline-js
+  variables:
+    CIKIT_JS_PATHS: testdata/web
+  script:
+    - !reference [.cikit-inline-js, script]
+    - mkdir -p /tmp/bad && echo '<script>const = ;</script>' > /tmp/bad/p.html
+    - if $CIKIT/bin/inline-js /tmp/bad; then echo "bad JS passed"; exit 1; fi
+
+promtool:
+  extends: .cikit-promtool
+  variables:
+    CIKIT_PROM_DIR: testdata/prometheus
+    CIKIT_PROM_RULE_TESTS: tests/app_test.yml
+
+dashboards-sync:
+  extends: .cikit-dashboards-sync
+  variables:
+    CIKIT_DASHBOARDS: testdata/grafana/gen.py testdata/grafana/selftest.json

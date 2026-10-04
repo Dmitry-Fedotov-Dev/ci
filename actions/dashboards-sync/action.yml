@@ -15,16 +15,5 @@ runs:
       env:
         PAIRS: ${{ inputs.pairs }}
       run: |
-        failed=0
-        while read -r gen json; do
-          [ -n "$gen" ] || continue
-          tmp=$(mktemp --suffix=.json)
-          python3 "$gen" "$tmp" >/dev/null
-          if ! diff -q "$tmp" "$json" >/dev/null; then
-            echo "::error file=$json,title=dashboards-sync::$json differs from $gen output — regenerate it"
-            failed=1
-          else
-            echo "in sync: $json"
-          fi
-        done <<< "$PAIRS"
-        exit $failed
+        # shellcheck disable=SC2086 # pairs are a word list
+        "${{ github.action_path }}/../../bin/dashboards-sync" $PAIRS

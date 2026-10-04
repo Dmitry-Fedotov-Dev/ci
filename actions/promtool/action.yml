@@ -24,11 +24,5 @@ runs:
         TESTS: ${{ inputs.rule-tests }}
         IMG: ${{ inputs.image }}
       run: |
-        dir=$(cd "$DIR" && pwd)
-        if [ -n "$CONFIG" ]; then
-          docker run --rm -v "$dir:/etc/prometheus:ro" --entrypoint promtool "$IMG" check config "/etc/prometheus/$CONFIG"
-        fi
-        for t in $TESTS; do
-          docker run --rm -v "$dir:/etc/prometheus:ro" -w "/etc/prometheus/$(dirname "$t")" --entrypoint promtool "$IMG" \
-            test rules "$(basename "$t")"
-        done
+        cfg=(--config "$CONFIG"); [ -n "$CONFIG" ] || cfg=(--no-config)
+        "${{ github.action_path }}/../../bin/promtool" --dir "$DIR" "${cfg[@]}" --rule-tests "$TESTS" --image "$IMG"

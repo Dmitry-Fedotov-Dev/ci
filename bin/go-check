@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# gofmt, go vet and go test for a Go module.
+#
+#   bin/go-check [--dir .] [--packages ./...] [--test-flags "-race -count=1"] [--no-gofmt]
+#                [--junit report.xml] [--coverage coverage.out]
+#
+# --junit writes a JUnit report (via gotestsum) — GitLab shows it in the merge request.
+# --coverage prints "total coverage: N%" — the line GitLab's `coverage:` regex reads.
+set -euo pipefail
+# shellcheck source=../lib/ci.sh
+. "$(dirname "$0")/../lib/ci.sh"
+
+dir=. pkgs=./... flags="-race -count=1" gofmt=1 junit="" cover=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --dir) dir=$2; shift 2 ;;
+    --packages) pkgs=$2; shift 2 ;;
+    --test-flags) flags=$2; shift 2 ;;
+    --no-gofmt) gofmt=0; shift ;;
+    --junit) junit=$2; shift 2 ;;
+    --coverage) cover=$2; shift 2 ;;
+    *) ci_error go-check "unknown argument $1"; exit 2 ;;
+  esac
+done
+ci_need go
+# report paths are given from where the job runs, not from the module
+case $junit in "" | /*) ;; *) junit=$PWD/$junit ;; esac
+case $cover in "" | /*) ;; *) cover=$PWD/$cover ;; esac
+cd "$dir"
+go version
+
+if [ "$gofmt" = 1 ]; then
+  # hidden directories are skipped: .git, and the module cache GitLab keeps in the project (.cache)
+  files=$(find . -path '*/.*' -prune -o -name '*.go' -print0 | xargs -0r gofmt -l)
+  if [ -n "$files" ]; then ci_error gofmt "not formatted:"; echo "$files"; exit 1; fi
+  echo "gofmt: ok"
+fi
+
+ci_section vet "go vet"
+# shellcheck disable=SC2086 # package and flag lists are word lists
+go vet $pkgs
+ci_section_end vet
+
+ci_section test "go test $flags"
+extra=()
+[ -z "$cover" ] || extra=(-coverprofile "$cover")
+status=0
+if [ -n "$junit" ]; then
+  # shellcheck disable=SC2086
+  go run gotest.tools/gotestsum@v1.13.0 --format testname --junitfile "$junit" -- $flags "${extra[@]}" $pkgs || status=$?
+else
+  # shellcheck disable=SC2086
+  go test $flags "${extra[@]}" $pkgs || status=$?
+fi
+ci_section_end test
+if [ -n "$cover" ] && [ -s "$cover" ]; then
+  echo "total coverage: $(go tool cover -func "$cover" | awk '/^total:/ { print $NF }')"
+fi
+exit "$status"

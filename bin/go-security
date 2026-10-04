@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# govulncheck (blocking) and gosec (a report unless --gosec-fail).
+#
+#   bin/go-security [--dir .] [--packages ./...] [--no-govulncheck] [--gosec-fail]
+#                   [--gosec-args "-exclude=G115"] [--lang en|ru] [--codequality gl-code-quality-report.json]
+#
+# Writes gosec.json in --dir and a findings table to the run summary. --codequality also writes
+# the findings in the Code Climate format GitLab shows in merge requests.
+set -euo pipefail
+# shellcheck source=../lib/ci.sh
+. "$(dirname "$0")/../lib/ci.sh"
+
+dir=. pkgs=./... vuln=1 fail=0 extra="" lang=en cq=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --dir) dir=$2; shift 2 ;;
+    --packages) pkgs=$2; shift 2 ;;
+    --no-govulncheck) vuln=0; shift ;;
+    --gosec-fail) fail=1; shift ;;
+    --gosec-args) extra=$2; shift 2 ;;
+    --lang) lang=$2; shift 2 ;;
+    --codequality) cq=$2; shift 2 ;;
+    *) ci_error go-security "unknown argument $1"; exit 2 ;;
+  esac
+done
+ci_need go python3
+case $cq in "" | /*) ;; *) cq=$PWD/$cq ;; esac
+summary=$CIKIT_HOME/scripts/summary.py
+root=$PWD
+cd "$dir"
+
+if [ "$vuln" = 1 ]; then
+  ci_section govulncheck govulncheck
+  ci_go_install golang.org/x/vuln/cmd/govulncheck@latest
+  # shellcheck disable=SC2086
+  govulncheck $pkgs
+  ci_section_end govulncheck
+fi
+
+ci_section gosec gosec
+ci_go_install github.com/securego/gosec/v2/cmd/gosec@latest
+nofail=-no-fail; [ "$fail" = 1 ] && nofail=
+status=0
+# no -quiet: with it gosec writes no report at all when there are no findings
+# shellcheck disable=SC2086
+gosec $nofail $extra -fmt json -out gosec.json $pkgs || status=$?
+ci_section_end gosec
+[ -f gosec.json ] || { ci_error gosec "gosec wrote no report (exit $status)"; exit 1; }
+python3 "$summary" --lang "$lang" gosec gosec.json | tee /dev/stderr | ci_summary
+[ -z "$cq" ] || python3 "$summary" codequality gosec.json "$root" >"$cq"
+exit "$status"

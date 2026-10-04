@@ -27,6 +27,7 @@ jobs:
         id: k6
         with:
           with: github.com/Dmitry-Fedotov-Dev/xk6-sip@v0.4.0
+          output: build/k6
       - name: k6 has xk6-sip
         run: ${{ steps.k6.outputs.path }} version | grep -i sip
 
@@ -78,6 +79,33 @@ jobs:
           sys.exit(0 if r.returncode else 1)
           PY
           then echo "drift detected"; else echo "::error::drift not detected"; exit 1; fi
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: git ls-files -z bin lib | xargs -0 shellcheck
+      - name: bin/ checks fail when they should
+        run: |
+          fails() { if "$@" >/dev/null 2>&1; then echo "::error::passed but must fail: $*"; exit 1; fi; }
+          echo '{}' > /tmp/drift.json
+          fails bin/dashboards-sync testdata/grafana/gen.py /tmp/drift.json
+          fails bin/k6-summary bogus testdata/reports
+          fails bin/xk6-build --k6 v2.3.0
+          fails bin/go-check --no-such-flag
+
+  # The GitLab templates, run by gitlab-ci-local in Docker with the real images: the same
+  # selftest a GitLab mirror of this repository runs (.gitlab-ci.yml).
+  gitlab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: gitlab-ci-local
+        run: |
+          npm install -g gitlab-ci-local@4.76.0
+          git remote set-head origin --auto || true
+          gitlab-ci-local --concurrency 4
 
   security:
     runs-on: ubuntu-latest

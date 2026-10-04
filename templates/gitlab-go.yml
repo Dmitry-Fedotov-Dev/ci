@@ -1,0 +1,36 @@
+# Starter CI for a Go project on GitLab: copy to .gitlab-ci.yml and delete what you do not
+# need. Every template is documented in gitlab/ci.yml of https://github.com/Dmitry-Fedotov-Dev/ci.
+include:
+  - remote: https://raw.githubusercontent.com/Dmitry-Fedotov-Dev/ci/v1/gitlab/ci.yml
+  # Without internet from the runners: mirror the repository into your GitLab and use
+  # - project: tools/ci
+  #   ref: v1
+  #   file: gitlab/ci.yml
+
+# variables:
+#   CIKIT_URL: https://gitlab.example.com/tools/ci.git   # the mirror, for the scripts
+#   CIKIT_GO_IMAGE: registry.example.com/golang:1.24     # an internal registry
+#   CIKIT_GO_TOOLS_IMAGE: registry.example.com/golang:1  # govulncheck, gosec, xk6: a current Go
+
+stages: [test]
+
+go:
+  extends: .cikit-go          # gofmt, vet, tests → JUnit in the MR, coverage on the job
+  # variables:
+  #   CIKIT_GO_TEST_FLAGS: -race -count=2
+
+security:
+  extends: .cikit-go-security # govulncheck + gosec → Code Quality widget in the MR
+  # variables:
+  #   CIKIT_GOSEC_ARGS: -exclude=G115
+
+# web:
+#   extends: .cikit-inline-js
+#   variables:
+#     CIKIT_JS_PATHS: web/static
+
+# monitoring:
+#   extends: .cikit-promtool
+#   variables:
+#     CIKIT_PROM_DIR: monitoring/prometheus
+#     CIKIT_PROM_RULE_TESTS: tests/alerts_test.yml

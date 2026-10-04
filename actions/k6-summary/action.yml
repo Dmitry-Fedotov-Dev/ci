@@ -29,7 +29,6 @@ runs:
   steps:
     - shell: bash
       env:
-        S: ${{ github.action_path }}/../../scripts/summary.py
         KIND: ${{ inputs.kind }}
         REPORTS: ${{ inputs.reports }}
         SCENARIOS: ${{ inputs.scenarios }}
@@ -38,17 +37,5 @@ runs:
         LANG_: ${{ inputs.lang }}
         OUT: ${{ inputs.output }}
       run: |
-        case "$KIND" in
-          functional)
-            [ -d "$REPORTS" ] || mkdir -p "$REPORTS"
-            # shellcheck disable=SC2086 # scenarios are a word list
-            python3 "$S" --lang "$LANG_" functional "$REPORTS" $SCENARIOS
-            # shellcheck disable=SC2086
-            python3 "$S" --lang "$LANG_" functional --all-steps "$REPORTS" $SCENARIOS > "${OUT:-/tmp/k6-summary.md}" ;;
-          load)
-            if [ ! -f "$REPORTS" ]; then echo "no $REPORTS: k6 did not finish"; exit 0; fi
-            python3 "$S" --lang "$LANG_" load "$REPORTS" "$TITLE" "$NOTE" > "${OUT:-/tmp/k6-summary.md}"
-            cat "${OUT:-/tmp/k6-summary.md}" ;;
-          *) echo "::error title=k6-summary::kind must be functional or load"; exit 1 ;;
-        esac
-        cat "${OUT:-/tmp/k6-summary.md}" >> "$GITHUB_STEP_SUMMARY"
+        "${{ github.action_path }}/../../bin/k6-summary" "$KIND" "$REPORTS" --scenarios "$SCENARIOS" --title "$TITLE" --note "$NOTE" \
+          --lang "$LANG_" --output "$OUT"

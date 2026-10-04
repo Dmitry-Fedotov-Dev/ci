@@ -1,0 +1,8 @@
+.gitlab-ci-local/
+ci-summary.md
+build/
+coverage.out
+go-test.xml
+gl-code-quality-report.json
+gosec.json
+!testdata/reports/gosec.json

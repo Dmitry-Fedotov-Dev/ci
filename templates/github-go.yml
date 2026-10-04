@@ -1,0 +1,39 @@
+# Starter CI for a Go project on GitHub: copy to .github/workflows/ci.yml and delete what you
+# do not need. Every step is documented in https://github.com/Dmitry-Fedotov-Dev/ci.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    uses: Dmitry-Fedotov-Dev/ci/.github/workflows/go.yml@v1
+    with:
+      test-flags: -race -count=1
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Dmitry-Fedotov-Dev/ci/actions/go-security@v1
+        # with:
+        #   gosec-args: -exclude=G115
+
+  # web:                       # pages embedded into the binary
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v7
+  #     - uses: Dmitry-Fedotov-Dev/ci/actions/inline-js@v1
+  #       with:
+  #         paths: web/static
+
+  # monitoring:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v7
+  #     - uses: Dmitry-Fedotov-Dev/ci/actions/promtool@v1
+  #       with:
+  #         dir: monitoring/prometheus
+  #         rule-tests: tests/alerts_test.yml

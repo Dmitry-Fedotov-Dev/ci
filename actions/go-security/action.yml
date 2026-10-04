@@ -32,31 +32,16 @@ runs:
       uses: actions/setup-go@v7
       with:
         go-version: ${{ inputs.go-version }}
-    - name: govulncheck
-      if: inputs.govulncheck == 'true'
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
+    - shell: bash
       env:
+        DIR: ${{ inputs.working-directory }}
         PKGS: ${{ inputs.packages }}
-      run: |
-        go install golang.org/x/vuln/cmd/govulncheck@latest
-        # shellcheck disable=SC2086
-        govulncheck $PKGS
-    - name: gosec
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      env:
-        S: ${{ github.action_path }}/../../scripts/summary.py
-        PKGS: ${{ inputs.packages }}
+        VULN: ${{ inputs.govulncheck }}
         FAIL: ${{ inputs.gosec-fail }}
         EXTRA: ${{ inputs.gosec-args }}
         LANG_: ${{ inputs.lang }}
       run: |
-        go install github.com/securego/gosec/v2/cmd/gosec@latest
-        nofail=-no-fail; [ "$FAIL" = true ] && nofail=
-        # shellcheck disable=SC2086
-        # no -quiet: with it gosec writes no report at all when there are no findings
-        gosec $nofail $EXTRA -fmt json -out gosec.json $PKGS || status=$?
-        [ -f gosec.json ] || { echo "::error::gosec wrote no report (exit ${status:-0})"; exit 1; }
-        python3 "$S" --lang "$LANG_" gosec gosec.json >> "$GITHUB_STEP_SUMMARY"
-        exit "${status:-0}"
+        args=(--dir "$DIR" --packages "$PKGS" --gosec-args "$EXTRA" --lang "$LANG_")
+        [ "$VULN" = true ] || args+=(--no-govulncheck)
+        [ "$FAIL" != true ] || args+=(--gosec-fail)
+        "${{ github.action_path }}/../../bin/go-security" "${args[@]}"
