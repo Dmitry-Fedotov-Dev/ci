@@ -8,7 +8,9 @@
 set -euo pipefail
 # shellcheck source=../lib/ci.sh
 . "$(dirname "$0")/../lib/ci.sh"
-[ $# -gt 0 ] && [ $(($# % 2)) = 0 ] || { ci_error dashboards-sync "usage: dashboards-sync <generator.py> <committed.json>..."; exit 2; }
+if [ $# -eq 0 ] || [ $(($# % 2)) -ne 0 ]; then
+  ci_error dashboards-sync "usage: dashboards-sync <generator.py> <committed.json>..."; exit 2
+fi
 ci_need python3
 failed=0
 while [ $# -gt 0 ]; do
