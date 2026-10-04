@@ -73,7 +73,7 @@ go:
 # The fallback path: a plain golang image with no scripts and no python3.
 go-exact-version:
   extends: .cikit-go
-  image: golang:1.24
+  image: golang:1.27
   variables:
     CIKIT_GO_DIR: testdata/gomod
     CIKIT_GO_TEST_FLAGS: -count=1
