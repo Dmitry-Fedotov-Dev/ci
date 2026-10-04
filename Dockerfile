@@ -16,7 +16,7 @@
 FROM golang:1.27-trixie AS go
 FROM node:22-trixie AS node
 FROM koalaman/shellcheck:v0.11.0 AS shellcheck
-FROM prom/prometheus:v3.5.0 AS prometheus
+FROM prom/prometheus:v3.15.0 AS prometheus
 
 FROM go AS tools
 COPY versions.env /tmp/versions.env
