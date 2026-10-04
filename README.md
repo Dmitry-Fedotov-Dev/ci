@@ -55,7 +55,9 @@ Scripts the actions run live in [`scripts/`](scripts) and work locally too:
   workflow, a real k6 build with xk6-sip, both summaries, and the failure paths (bad JS, dashboard
   drift) are checked to really fail.
 - **Release:** develop on a branch (e.g. `next`); point a project's branch at `@next` and let its CI pass
-  together with selftest; only then merge to `main` and tag: `git tag v1.x.y && git tag -f v1 && git push origin v1.x.y && git push -f origin v1`.
+  together with selftest; only then merge to `main`, move the `v1` **branch** to it
+  (`git push origin main:v1`) and tag the release `v1.x.y` (Releases → Draft a new release).
+  `v1` is a branch, not a tag: `uses: …@v1` resolves either, and a branch moves forward without force-pushing.
 - Do not use `xk6`'s environment names (`K6_VERSION`, `XK6_*`) for your own variables: xk6 reads them as its flags.
 
 License: MIT.
