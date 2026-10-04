@@ -1,0 +1,37 @@
+name: Go lint
+description: >-
+  golangci-lint with the project's config, or this repository's default (config/golangci.yml)
+  when the project has none.
+inputs:
+  working-directory:
+    default: .
+  config:
+    description: Config file; empty — the project's .golangci.* or the default.
+    default: ""
+  new-from-rev:
+    description: Report only issues introduced since this revision (e.g. origin/main) — for adopting the linter in an existing project.
+    default: ""
+  args:
+    description: Extra golangci-lint arguments, e.g. --timeout=5m.
+    default: ""
+  go-version:
+    description: Go to set up; empty to keep the job's. golangci-lint needs a current Go.
+    default: stable
+runs:
+  using: composite
+  steps:
+    - if: inputs.go-version != ''
+      uses: actions/setup-go@v7
+      with:
+        go-version: ${{ inputs.go-version }}
+    - shell: bash
+      env:
+        DIR: ${{ inputs.working-directory }}
+        CONFIG: ${{ inputs.config }}
+        SINCE: ${{ inputs.new-from-rev }}
+        EXTRA: ${{ inputs.args }}
+      run: |
+        args=(--dir "$DIR" --args "$EXTRA")
+        [ -z "$CONFIG" ] || args+=(--config "$CONFIG")
+        [ -z "$SINCE" ] || args+=(--new-from-rev "$SINCE")
+        "${{ github.action_path }}/../../bin/go-lint" "${args[@]}"

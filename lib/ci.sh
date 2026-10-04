@@ -11,6 +11,9 @@
 
 CIKIT_HOME=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export CIKIT_HOME
+# Pinned tool versions (VER_*). Not exported: they are defaults for our flags, nothing else.
+# shellcheck source=../versions.env
+. "$CIKIT_HOME/versions.env"
 
 ci_platform() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo github
@@ -57,9 +60,17 @@ ci_need() {
   done
 }
 
-# go install, then the binary is on PATH even when GOPATH/bin is not (fresh runners, containers).
+# ci_go_install BINARY MODULE/cmd@VERSION — use the binary when it is already there at that
+# version (the cikit image has every tool), go install it otherwise.
 ci_go_install() {
-  go install "$1"
+  local bin=$1 pkg=$2 want=${2##*@}
   PATH="$(go env GOPATH)/bin:$PATH"
   export PATH
+  if command -v "$bin" >/dev/null && [ "$(ci_tool_version "$bin")" = "${want#v}" ]; then return 0; fi
+  go install "$pkg"
+}
+
+# The module version a Go binary was built from ("1.8.0"), empty when unknown.
+ci_tool_version() {
+  go version -m "$(command -v "$1")" 2>/dev/null | awk '$1 == "mod" { sub(/^v/, "", $3); print $3; exit }'
 }

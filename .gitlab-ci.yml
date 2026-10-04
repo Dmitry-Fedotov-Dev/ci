@@ -1,12 +1,63 @@
-# Selftest of the GitLab templates, against testdata/ — the same checks as
-# .github/workflows/selftest.yml. Runs here when the repository is mirrored into a GitLab,
+# Selftest of the GitLab templates and components, against testdata/ — the same checks as
+# .github/workflows/selftest.yml. Runs here when the repository is mirrored into a GitLab, and
+# locally with gitlab-ci-local (https://github.com/firecow/gitlab-ci-local) on a Docker host:
+#   docker build -t cikit:test . && gitlab-ci-local --variable CIKIT_IMAGE=cikit:test
 # Checks are in script, not after_script: GitLab ignores after_script failures.
-# Locally: gitlab-ci-local (https://github.com/firecow/gitlab-ci-local) in a Docker host.
 include:
   - local: gitlab/ci.yml
+  # The same steps as CI/CD components (templates/), with typed inputs. Here from local
+  # files; in a project: - component: $CI_SERVER_FQDN/tools/ci/go@v1
+  - local: templates/go.yml
+    inputs:
+      job: component-go
+      image: $CIKIT_IMAGE
+      dir: testdata/gomod
+      test_flags: -count=1
+  - local: templates/go-lint.yml
+    inputs:
+      job: component-go-lint
+      image: $CIKIT_IMAGE
+      dir: testdata/gomod
+  - local: templates/go-security.yml
+    inputs:
+      job: component-go-security
+      image: $CIKIT_IMAGE
+      dir: testdata/gomod
+  - local: templates/xk6-build.yml
+    inputs:
+      job: component-xk6-build
+      image: $CIKIT_IMAGE
+      with: github.com/Dmitry-Fedotov-Dev/xk6-sip@v0.4.0
+      output: build/k6-component
+  - local: templates/k6-summary.yml
+    inputs:
+      job: component-k6-summary
+      image: $CIKIT_IMAGE
+      kind: load
+      reports: testdata/reports/summary.json
+      lang: ru
+  - local: templates/inline-js.yml
+    inputs:
+      job: component-inline-js
+      image: $CIKIT_IMAGE
+      paths: testdata/web
+  - local: templates/promtool.yml
+    inputs:
+      job: component-promtool
+      image: $CIKIT_IMAGE
+      dir: testdata/prometheus
+      rule_tests: tests/app_test.yml
+  - local: templates/dashboards-sync.yml
+    inputs:
+      job: component-dashboards-sync
+      image: $CIKIT_IMAGE
+      pairs: testdata/grafana/gen.py testdata/grafana/selftest.json
 
+# The scripts come from this commit (CIKIT_LOCAL), the tools from CIKIT_IMAGE: the published
+# image by default, the one built from this commit when the GitHub selftest runs it
+# (--variable CIKIT_IMAGE=cikit:test).
 variables:
-  CIKIT_LOCAL: $CI_PROJECT_DIR # the templates from this commit, not from CIKIT_REF
+  CIKIT_LOCAL: $CI_PROJECT_DIR
 
 stages: [test]
 
@@ -19,6 +70,17 @@ go:
     - !reference [.cikit-go, script]
     - grep -q '<testcase' go-test.xml
 
+# The fallback path: a plain golang image with no scripts and no python3.
+go-exact-version:
+  extends: .cikit-go
+  image: golang:1.24
+  variables:
+    CIKIT_GO_DIR: testdata/gomod
+    CIKIT_GO_TEST_FLAGS: -count=1
+  script:
+    - !reference [.cikit-go, script]
+    - go version | grep -q 'go1.24'
+
 go-security:
   extends: .cikit-go-security
   variables:
@@ -27,6 +89,14 @@ go-security:
     - !reference [.cikit-go-security, script]
     - test -f testdata/gomod/gosec.json
     - grep -q '^\[' gl-code-quality-report.json
+
+go-lint:
+  extends: .cikit-go-lint
+  variables:
+    CIKIT_GO_DIR: testdata/gomod
+  script:
+    - !reference [.cikit-go-lint, script]
+    - if "$CIKIT/bin/go-lint" --dir testdata/golint; then echo "lint error passed"; exit 1; fi
 
 xk6-build:
   extends: .cikit-xk6-build
@@ -73,7 +143,12 @@ promtool:
     CIKIT_PROM_DIR: testdata/prometheus
     CIKIT_PROM_RULE_TESTS: tests/app_test.yml
 
+# The image path: no CIKIT_LOCAL, so the scripts come from the image's /opt/cikit.
 dashboards-sync:
   extends: .cikit-dashboards-sync
   variables:
+    CIKIT_LOCAL: ""
     CIKIT_DASHBOARDS: testdata/grafana/gen.py testdata/grafana/selftest.json
+  script:
+    - !reference [.cikit-dashboards-sync, script]
+    - test "$CIKIT" = /opt/cikit

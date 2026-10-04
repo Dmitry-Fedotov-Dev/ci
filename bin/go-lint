@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# golangci-lint: the Go community's standard linter runner.
+#
+#   bin/go-lint [--dir .] [--config path] [--new-from-rev origin/main] [--codequality file.json]
+#               [--args "--timeout=5m"]
+#
+# Config: the project's own .golangci.{yml,yaml,toml,json} in --dir when there is one, otherwise
+# config/golangci.yml from this repository. --new-from-rev reports only issues introduced since
+# that revision: the way to adopt the linter in an existing project without fixing it all first.
+# --codequality writes the issues for GitLab's Code Quality widget, paths from where the job
+# runs (the repo root). golangci-lint v2 counts relative paths from the config file's directory,
+# which moves with the config, so the report is written with absolute paths and rewritten here.
+set -euo pipefail
+# shellcheck source=../lib/ci.sh
+. "$(dirname "$0")/../lib/ci.sh"
+
+dir=. config="" since="" cq="" extra=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --dir) dir=$2; shift 2 ;;
+    --config) config=$2; shift 2 ;;
+    --new-from-rev) since=$2; shift 2 ;;
+    --codequality) cq=$2; shift 2 ;;
+    --args) extra=$2; shift 2 ;;
+    *) ci_error go-lint "unknown argument $1"; exit 2 ;;
+  esac
+done
+ci_need go
+[ -z "$cq" ] || ci_need python3
+case $cq in "" | /*) ;; *) cq=$PWD/$cq ;; esac
+case $config in "" | /*) ;; *) config=$PWD/$config ;; esac
+root=$PWD
+ci_go_install golangci-lint "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$VER_GOLANGCI_LINT"
+cd "$dir"
+
+if [ -z "$config" ]; then
+  for f in .golangci.yml .golangci.yaml .golangci.toml .golangci.json; do
+    [ -f "$f" ] && config=$f && break
+  done
+  if [ -z "$config" ]; then config=$CIKIT_HOME/config/golangci.yml; fi
+fi
+echo "golangci-lint $(ci_tool_version golangci-lint), config: $config"
+
+args=(run --config "$config" --output.text.path stdout)
+[ -z "$since" ] || args+=(--new-from-rev "$since")
+[ -z "$cq" ] || args+=(--path-mode abs --output.code-climate.path "$cq")
+status=0
+# shellcheck disable=SC2086 # extra arguments are a word list
+golangci-lint "${args[@]}" $extra || status=$?
+if [ -n "$cq" ] && [ -f "$cq" ]; then
+  python3 - "$cq" "$root" <<'PY'
+import json, os, sys
+path, root = sys.argv[1], sys.argv[2]
+issues = json.load(open(path, encoding="utf-8")) or []
+for i in issues:
+    i["location"]["path"] = os.path.relpath(i["location"]["path"], root)
+json.dump(issues, open(path, "w", encoding="utf-8"), indent=1)
+PY
+fi
+exit "$status"

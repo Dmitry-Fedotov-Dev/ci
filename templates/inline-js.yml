@@ -1,0 +1,24 @@
+# GitLab CI/CD component: node --check for .js files and inline <script> in .html
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/inline-js@v1
+spec:
+  inputs:
+    job:
+      default: inline-js
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    paths:
+      description: Directories, space-separated.
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - '"$CIKIT/bin/inline-js" $[[ inputs.paths ]]'

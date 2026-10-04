@@ -13,6 +13,16 @@ jobs:
     with:
       test-flags: -race -count=1
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # for new-from-rev
+      - uses: Dmitry-Fedotov-Dev/ci/actions/go-lint@v1
+        # with:
+        #   new-from-rev: origin/main # an existing project: new issues only
+
   security:
     runs-on: ubuntu-latest
     steps:

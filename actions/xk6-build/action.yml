@@ -2,8 +2,8 @@ name: xk6 build
 description: Build a k6 binary with extensions (for example xk6-sip) and print its version.
 inputs:
   k6-version:
-    description: k6 release to build, e.g. v2.3.0.
-    default: v2.3.0
+    description: k6 release to build, e.g. v2.3.0; empty — the version pinned in versions.env.
+    default: ""
   with:
     description: >-
       Extensions, one per line, as xk6 --with takes them:
@@ -13,8 +13,8 @@ inputs:
     description: Where to write the binary.
     default: bin/k6
   xk6-version:
-    description: xk6 version to install.
-    default: latest
+    description: xk6 version to install; empty — the version pinned in versions.env.
+    default: ""
   go-version:
     description: Go version to set up; empty to keep the one already set up by the job.
     default: stable

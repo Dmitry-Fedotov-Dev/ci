@@ -1,0 +1,16 @@
+# Default golangci-lint config: used only when the project has none of its own
+# (.golangci.yml, .golangci.yaml, .golangci.toml or .golangci.json in the module directory).
+# The standard set plus a few linters that catch real bugs rather than style.
+version: "2"
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose # an unclosed HTTP response body leaks a connection
+    - errorlint # errors compared with == instead of errors.Is
+    - misspell
+    - nilerr # return nil after checking err != nil
+    - unconvert
+  exclusions:
+    presets: [comments, std-error-handling]
+formatters:
+  enable: [gofmt]

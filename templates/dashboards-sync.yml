@@ -1,0 +1,24 @@
+# GitLab CI/CD component: generated Grafana dashboards match their generators
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/dashboards-sync@v1
+spec:
+  inputs:
+    job:
+      default: dashboards-sync
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    pairs:
+      description: '"generator.py committed.json" pairs, space-separated.'
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - '"$CIKIT/bin/dashboards-sync" $[[ inputs.pairs ]]'

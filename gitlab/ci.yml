@@ -8,7 +8,7 @@
 #     #   file: gitlab/ci.yml
 #
 #   variables:
-#     CIKIT_URL: https://gitlab.example.com/tools/ci.git   # only with a mirror
+#     CIKIT_IMAGE: registry.example.com/tools/ci:v1   # only with a mirror of the image
 #
 #   go:
 #     extends: .cikit-go
@@ -16,25 +16,31 @@
 # Every template is a hidden job (its name starts with a dot): nothing runs until a job
 # extends it. Settings are CIKIT_* variables; set them in the job, or globally.
 #
-# How a job gets the scripts: GitLab includes YAML only, so before_script clones this
-# repository at CIKIT_REF into a temporary directory and puts it into $CIKIT. A job that needs
-# its own before_script keeps ours with:
+# How a job gets the tools and scripts: every job runs in the cikit image
+# (ghcr.io/dmitry-fedotov-dev/ci, built from this repository's Dockerfile), which has them all
+# at pinned versions — nothing is downloaded per job, and the image tag is the version.
+# A job given another image (CIKIT_GO_IMAGE: golang:1.24 to test with an exact Go) has no
+# scripts, so before_script clones this repository at CIKIT_REF and installs git/python3 when
+# the image lacks them. Either way the scripts' directory is in $CIKIT. A job that needs its
+# own before_script keeps ours with:
 #   before_script:
 #     - !reference [.cikit, before_script]
 #     - your commands
 
 variables:
+  CIKIT_IMAGE: ghcr.io/dmitry-fedotov-dev/ci:v1
+  # Per-job images, all the cikit image by default. CIKIT_GO_IMAGE: golang:1.24 runs the tests
+  # with exactly that Go (the cikit image has a current Go and GOTOOLCHAIN=auto). The tools
+  # (govulncheck, gosec, golangci-lint, xk6) need a current Go: leave CIKIT_GO_TOOLS_IMAGE be.
+  CIKIT_GO_IMAGE: $CIKIT_IMAGE
+  CIKIT_GO_TOOLS_IMAGE: $CIKIT_IMAGE
+  CIKIT_PYTHON_IMAGE: $CIKIT_IMAGE
+  CIKIT_NODE_IMAGE: $CIKIT_IMAGE
+  # since v1.1 runs bin/promtool, so it needs bash: the plain prom/prometheus image no longer fits
+  CIKIT_PROMETHEUS_IMAGE: $CIKIT_IMAGE
+  # Only for images without the scripts:
   CIKIT_URL: https://github.com/Dmitry-Fedotov-Dev/ci.git
   CIKIT_REF: v1
-  # Images. Full Debian images: they already have git, and most have python3.
-  # Tests: pin to your go.mod's Go (golang:1.24); golang:1 is the newest 1.x.
-  CIKIT_GO_IMAGE: golang:1
-  # Tools (govulncheck, gosec, xk6) need a current Go and scan with its stdlib, whatever the
-  # project pins — the GitHub actions use go-version: stable for the same reason.
-  CIKIT_GO_TOOLS_IMAGE: golang:1
-  CIKIT_PYTHON_IMAGE: python:3.12
-  CIKIT_NODE_IMAGE: node:22
-  CIKIT_PROMETHEUS_IMAGE: prom/prometheus:v3.5.0
 
 .cikit:
   before_script:
@@ -53,17 +59,20 @@ variables:
           echo "no package manager to install$missing — use an image that has them"; return 1
         fi
       }
-      cikit_pkgs git bash
       if [ -n "${CIKIT_LOCAL:-}" ]; then
         CIKIT=$CIKIT_LOCAL
+      elif [ -x "${CIKIT_HOME:-/opt/cikit}/bin/go-check" ]; then
+        CIKIT=${CIKIT_HOME:-/opt/cikit} # the cikit image
       else
+        cikit_pkgs git bash
         CIKIT=/tmp/cikit-$CI_JOB_ID
         rm -rf "$CIKIT"
         git -c advice.detachedHead=false clone -q --depth 1 --branch "$CIKIT_REF" "$CIKIT_URL" "$CIKIT"
       fi
       export CIKIT
       if [ -n "${CIKIT_LOCAL:-}" ]; then echo "cikit: local copy $CIKIT"
-      else echo "cikit: $CIKIT_URL@$CIKIT_REF ($(git -C "$CIKIT" rev-parse --short HEAD))"; fi
+      elif [ -d "$CIKIT/.git" ]; then echo "cikit: $CIKIT_URL@$CIKIT_REF ($(git -C "$CIKIT" rev-parse --short HEAD))"
+      else echo "cikit: image $CIKIT_IMAGE"; fi
 
 # --- Go ---------------------------------------------------------------------------------------
 
@@ -127,6 +136,30 @@ variables:
     expose_as: gosec summary
     expire_in: 2 weeks
 
+# golangci-lint (the project's .golangci.* or config/golangci.yml) → Code Quality widget.
+#   CIKIT_LINT_NEW_FROM_REV: origin/$CI_DEFAULT_BRANCH — only issues new since the default
+#   branch, to adopt the linter in an existing project (needs GIT_DEPTH: 0)
+.cikit-go-lint:
+  extends: [.cikit, .cikit-go-cache]
+  image: $CIKIT_GO_TOOLS_IMAGE
+  variables:
+    CIKIT_GO_DIR: .
+    CIKIT_LINT_CONFIG: ""
+    CIKIT_LINT_NEW_FROM_REV: ""
+    CIKIT_LINT_ARGS: ""
+  script:
+    - cikit_pkgs python3
+    - |
+      set -- --dir "$CIKIT_GO_DIR" --args "$CIKIT_LINT_ARGS" --codequality gl-code-quality-report.json
+      [ -z "$CIKIT_LINT_CONFIG" ] || set -- "$@" --config "$CIKIT_LINT_CONFIG"
+      [ -z "$CIKIT_LINT_NEW_FROM_REV" ] || set -- "$@" --new-from-rev "$CIKIT_LINT_NEW_FROM_REV"
+      "$CIKIT/bin/go-lint" "$@"
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    expire_in: 2 weeks
+
 # --- k6 ---------------------------------------------------------------------------------------
 
 # A k6 binary with extensions, as an artifact for later jobs (needs: [k6]).
@@ -136,9 +169,9 @@ variables:
   extends: [.cikit, .cikit-go-cache]
   image: $CIKIT_GO_TOOLS_IMAGE
   variables:
-    CIKIT_K6_RELEASE: v2.3.0
+    CIKIT_K6_RELEASE: "" # empty: VER_K6 from versions.env
     CIKIT_XK6_WITH: ""
-    CIKIT_XK6_VERSION: latest
+    CIKIT_XK6_VERSION: "" # empty: VER_XK6 from versions.env
     CIKIT_K6_OUTPUT: bin/k6
   script:
     - '"$CIKIT/bin/xk6-build" --k6 "$CIKIT_K6_RELEASE" --with "$CIKIT_XK6_WITH" --xk6 "$CIKIT_XK6_VERSION" --output "$CIKIT_K6_OUTPUT"'
@@ -184,34 +217,20 @@ variables:
     - cikit_pkgs python3
     - '"$CIKIT/bin/inline-js" $CIKIT_JS_PATHS'
 
-# promtool check config and rule unit tests, in the Prometheus image itself.
+# promtool check config and rule unit tests (promtool from the cikit image).
 .cikit-promtool:
   extends: .cikit
-  image:
-    name: $CIKIT_PROMETHEUS_IMAGE
-    entrypoint: [""]
+  image: $CIKIT_PROMETHEUS_IMAGE
   variables:
     CIKIT_PROM_DIR: monitoring/prometheus
     CIKIT_PROM_CONFIG: prometheus.yml
     CIKIT_PROM_RULE_TESTS: ""
     CIKIT_PROM_MOUNT: /etc/prometheus
-  # The Prometheus image is busybox: no git and no package manager to fetch bin/promtool with.
-  # This is bin/promtool's "promtool on PATH" branch; selftest runs both.
-  before_script: []
   script:
     - |
-      set -e
-      dir=$(cd "$CIKIT_PROM_DIR" && pwd)
-      promtool --version 2>&1 | head -1
-      if [ -n "$CIKIT_PROM_CONFIG" ]; then
-        tmp=$(dirname "$dir/$CIKIT_PROM_CONFIG")/.promtool-$$.yml
-        sed "s#$CIKIT_PROM_MOUNT/#$dir/#g" "$dir/$CIKIT_PROM_CONFIG" >"$tmp"
-        promtool check config "$tmp" || { rm -f "$tmp"; exit 1; }
-        rm -f "$tmp"
-      fi
-      for t in $CIKIT_PROM_RULE_TESTS; do
-        (cd "$dir/$(dirname "$t")" && promtool test rules "$(basename "$t")")
-      done
+      set -- --dir "$CIKIT_PROM_DIR" --rule-tests "$CIKIT_PROM_RULE_TESTS" --mount "$CIKIT_PROM_MOUNT"
+      if [ -n "$CIKIT_PROM_CONFIG" ]; then set -- "$@" --config "$CIKIT_PROM_CONFIG"; else set -- "$@" --no-config; fi
+      "$CIKIT/bin/promtool" "$@"
 
 # Generated Grafana dashboards match their generators.
 #   CIKIT_DASHBOARDS: "gen.py committed.json" pairs, space-separated

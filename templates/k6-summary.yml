@@ -1,0 +1,43 @@
+# GitLab CI/CD component: Markdown summary of k6 results, linked from the merge request
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/k6-summary@v1
+spec:
+  inputs:
+    job:
+      default: k6-summary
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    kind:
+      default: functional
+      options: [functional, load]
+    reports:
+      default: reports
+      description: functional — a directory of <scenario>.xml; load — a --summary-export JSON file.
+    scenarios:
+      default: ""
+    title:
+      default: ""
+    note:
+      default: ""
+    lang:
+      default: en
+      options: [en, ru]
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - |
+      "$CIKIT/bin/k6-summary" $[[ inputs.kind ]] "$[[ inputs.reports ]]" --scenarios "$[[ inputs.scenarios ]]" --title "$[[ inputs.title ]]" --note "$[[ inputs.note ]]" --lang $[[ inputs.lang ]]
+  artifacts:
+    when: always
+    paths: [ci-summary.md]
+    expose_as: k6 summary
+    expire_in: 2 weeks

@@ -27,11 +27,21 @@ while [ $# -gt 0 ]; do
 done
 dir=$(cd "$dir" && pwd)
 
-if command -v promtool >/dev/null; then
+# The real promtool: this script has the same name, and a copy of it can come first on PATH
+# (the cikit image puts /opt/cikit/bin there). The real one is a binary, ours is a script.
+real=""
+while IFS= read -r p; do
+  [ "$(head -c2 "$p")" = "#!" ] || { real=$p; break; }
+done < <(type -ap promtool)
+
+if [ -n "$real" ]; then
+  promtool() { "$real" "$@"; }
   promtool --version 2>&1 | head -1
   if [ -n "$config" ]; then
     # next to the original, so relative paths in it resolve the same way
     tmp=$(dirname "$dir/$config")/.promtool-$$.yml
+    # read-only checkout (a :ro mount): a temp dir; then only absolute paths in the config resolve
+    if ! : 2>/dev/null >"$tmp"; then tmp=$(mktemp --suffix=.yml); fi
     trap 'rm -f "$tmp"' EXIT
     sed "s#$mount/#$dir/#g" "$dir/$config" >"$tmp"
     promtool check config "$tmp"

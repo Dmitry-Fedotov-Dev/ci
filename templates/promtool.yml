@@ -1,0 +1,36 @@
+# GitLab CI/CD component: promtool check config and alert rule unit tests
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/promtool@v1
+spec:
+  inputs:
+    job:
+      default: promtool
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    dir:
+      default: monitoring/prometheus
+    config:
+      default: prometheus.yml
+      description: Relative to dir; empty — skip the config check.
+    rule_tests:
+      default: ""
+      description: Rule test files relative to dir, space-separated.
+    mount:
+      default: /etc/prometheus
+      description: The directory the config names its files by (inside the Prometheus container).
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - |
+      set -- --dir "$[[ inputs.dir ]]" --rule-tests "$[[ inputs.rule_tests ]]" --mount "$[[ inputs.mount ]]"
+      if [ -n "$[[ inputs.config ]]" ]; then set -- "$@" --config "$[[ inputs.config ]]"; else set -- "$@" --no-config; fi
+      "$CIKIT/bin/promtool" "$@"

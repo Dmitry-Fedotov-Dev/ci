@@ -1,0 +1,6 @@
+*
+!bin/
+!lib/
+!scripts/
+!config/
+!versions.env

@@ -1,0 +1,47 @@
+# GitLab CI/CD component: golangci-lint — issues in the Code Quality widget
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/go-lint@v1
+spec:
+  inputs:
+    job:
+      default: go-lint
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    dir:
+      default: .
+    config:
+      default: ""
+      description: Config file; empty — the project's .golangci.* or the kit default.
+    new_from_rev:
+      default: ""
+      description: Report only issues new since this revision (origin/main) — to adopt the linter gradually; needs GIT_DEPTH 0.
+    args:
+      default: ""
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  variables:
+    GOMODCACHE: $CI_PROJECT_DIR/.cache/gomod
+    GOCACHE: $CI_PROJECT_DIR/.cache/gobuild
+  cache:
+    key: cikit-go-$CI_JOB_NAME_SLUG
+    paths: [.cache/gomod, .cache/gobuild]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - |
+      set -- --dir "$[[ inputs.dir ]]" --args "$[[ inputs.args ]]" --codequality gl-code-quality-report.json
+      [ -z "$[[ inputs.config ]]" ] || set -- "$@" --config "$[[ inputs.config ]]"
+      [ -z "$[[ inputs.new_from_rev ]]" ] || set -- "$@" --new-from-rev "$[[ inputs.new_from_rev ]]"
+      "$CIKIT/bin/go-lint" "$@"
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    expire_in: 2 weeks

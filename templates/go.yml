@@ -1,0 +1,48 @@
+# GitLab CI/CD component: gofmt, go vet, go test — JUnit and coverage in the merge request
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/go@v1
+spec:
+  inputs:
+    job:
+      default: go
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    dir:
+      default: .
+      description: Module directory.
+    packages:
+      default: ./...
+    test_flags:
+      default: -race -count=1
+    gofmt:
+      type: boolean
+      default: true
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  variables:
+    GOMODCACHE: $CI_PROJECT_DIR/.cache/gomod
+    GOCACHE: $CI_PROJECT_DIR/.cache/gobuild
+  cache:
+    key: cikit-go-$CI_JOB_NAME_SLUG
+    paths: [.cache/gomod, .cache/gobuild]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - |
+      set -- --dir "$[[ inputs.dir ]]" --packages "$[[ inputs.packages ]]" --test-flags "$[[ inputs.test_flags ]]" --junit go-test.xml --coverage coverage.out
+      [ "$[[ inputs.gofmt ]]" = true ] || set -- "$@" --no-gofmt
+      "$CIKIT/bin/go-check" "$@"
+  coverage: '/total coverage: (\d+(?:\.\d+)?)%/'
+  artifacts:
+    when: always
+    reports:
+      junit: go-test.xml
+    paths: [go-test.xml, coverage.out]
+    expire_in: 2 weeks

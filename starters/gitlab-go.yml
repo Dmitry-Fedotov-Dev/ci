@@ -1,0 +1,44 @@
+# Starter CI for a Go project on GitLab, with the include templates (any GitLab version, and
+# straight from GitHub without a mirror). On GitLab 17+ with a mirror of this repository,
+# gitlab-components.yml is the better start: typed inputs, checked when the pipeline is created.
+# Copy to .gitlab-ci.yml and delete what you do not need; every template is documented in
+# gitlab/ci.yml of https://github.com/Dmitry-Fedotov-Dev/ci.
+include:
+  - remote: https://raw.githubusercontent.com/Dmitry-Fedotov-Dev/ci/v1/gitlab/ci.yml
+  # Without internet from the runners: mirror the repository into your GitLab and use
+  # - project: tools/ci
+  #   ref: v1
+  #   file: gitlab/ci.yml
+
+# variables:
+#   CIKIT_IMAGE: registry.example.com/tools/ci:v1   # the cikit image mirrored into your registry
+#   CIKIT_GO_IMAGE: golang:1.24                     # tests with exactly this Go (scripts are fetched)
+
+stages: [test]
+
+go:
+  extends: .cikit-go          # gofmt, vet, tests → JUnit in the MR, coverage on the job
+  # variables:
+  #   CIKIT_GO_TEST_FLAGS: -race -count=2
+
+lint:
+  extends: .cikit-go-lint     # golangci-lint → Code Quality widget in the MR
+  # variables:
+  #   CIKIT_LINT_NEW_FROM_REV: origin/$CI_DEFAULT_BRANCH   # an existing project: new issues only
+  #   GIT_DEPTH: 0
+
+security:
+  extends: .cikit-go-security # govulncheck + gosec → Code Quality widget in the MR
+  # variables:
+  #   CIKIT_GOSEC_ARGS: -exclude=G115
+
+# web:
+#   extends: .cikit-inline-js
+#   variables:
+#     CIKIT_JS_PATHS: web/static
+
+# monitoring:
+#   extends: .cikit-promtool
+#   variables:
+#     CIKIT_PROM_DIR: monitoring/prometheus
+#     CIKIT_PROM_RULE_TESTS: tests/alerts_test.yml

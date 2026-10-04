@@ -31,14 +31,14 @@ cd "$dir"
 
 if [ "$vuln" = 1 ]; then
   ci_section govulncheck govulncheck
-  ci_go_install golang.org/x/vuln/cmd/govulncheck@latest
+  ci_go_install govulncheck "golang.org/x/vuln/cmd/govulncheck@$VER_GOVULNCHECK"
   # shellcheck disable=SC2086
   govulncheck $pkgs
   ci_section_end govulncheck
 fi
 
 ci_section gosec gosec
-ci_go_install github.com/securego/gosec/v2/cmd/gosec@latest
+ci_go_install gosec "github.com/securego/gosec/v2/cmd/gosec@$VER_GOSEC"
 nofail=-no-fail; [ "$fail" = 1 ] && nofail=
 status=0
 # no -quiet: with it gosec writes no report at all when there are no findings

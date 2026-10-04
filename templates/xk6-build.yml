@@ -1,0 +1,41 @@
+# GitLab CI/CD component: a k6 binary with extensions, as an artifact for later jobs
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/xk6-build@v1
+spec:
+  inputs:
+    job:
+      default: xk6-build
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    with:
+      description: Extensions, one per line, as xk6 --with takes them (module@version, or module=. for this repo).
+    k6_version:
+      default: ""
+      description: Empty — the version pinned in the kit.
+    xk6_version:
+      default: ""
+    output:
+      default: bin/k6
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  variables:
+    GOMODCACHE: $CI_PROJECT_DIR/.cache/gomod
+    GOCACHE: $CI_PROJECT_DIR/.cache/gobuild
+  cache:
+    key: cikit-go-$CI_JOB_NAME_SLUG
+    paths: [.cache/gomod, .cache/gobuild]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - '"$CIKIT/bin/xk6-build" --with "$[[ inputs.with ]]" --k6 "$[[ inputs.k6_version ]]" --xk6 "$[[ inputs.xk6_version ]]" --output "$[[ inputs.output ]]"'
+  artifacts:
+    paths:
+      - "$[[ inputs.output ]]"
+    expire_in: 1 week

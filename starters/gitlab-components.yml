@@ -1,0 +1,28 @@
+# Starter CI for a Go project on GitLab 17+, with CI/CD components. Components are included
+# from a project on the same GitLab, so first mirror https://github.com/Dmitry-Fedotov-Dev/ci
+# into it (here: tools/ci) and the cikit image into your registry.
+# Inputs are typed and checked when the pipeline is created: a misspelled input fails at once.
+# Every component's inputs are listed at the top of templates/<name>.yml.
+include:
+  - component: $CI_SERVER_FQDN/tools/ci/go@v1
+    inputs:
+      image: registry.example.com/tools/ci:v1
+      test_flags: -race -count=2
+  - component: $CI_SERVER_FQDN/tools/ci/go-lint@v1
+    inputs:
+      image: registry.example.com/tools/ci:v1
+      # new_from_rev: origin/$CI_DEFAULT_BRANCH   # an existing project: new issues only
+  - component: $CI_SERVER_FQDN/tools/ci/go-security@v1
+    inputs:
+      image: registry.example.com/tools/ci:v1
+      # gosec_args: -exclude=G115
+  # - component: $CI_SERVER_FQDN/tools/ci/inline-js@v1
+  #   inputs:
+  #     image: registry.example.com/tools/ci:v1
+  #     paths: web/static
+  # - component: $CI_SERVER_FQDN/tools/ci/promtool@v1
+  #   inputs:
+  #     image: registry.example.com/tools/ci:v1
+  #     rule_tests: tests/alerts_test.yml
+
+stages: [test]

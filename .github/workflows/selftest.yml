@@ -1,10 +1,16 @@
 # The CI repository tests itself before every release: each workflow and action runs against
-# testdata/, and the failure paths are checked to really fail.
+# testdata/, and the failure paths are checked to really fail. When everything passes on main,
+# next or v1, the cikit image is published as ghcr.io/dmitry-fedotov-dev/ci:<branch>.
 name: selftest
 
 on:
   push: # every branch: a release candidate is tested on its own branch before main
   pull_request:
+  schedule:
+    # weekly: rebuild the image on v1 with the latest Go patch release — govulncheck reports
+    # the stdlib of the Go it runs with, so a stale image would flag long-fixed vulnerabilities
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
 
 jobs:
   go:
@@ -20,7 +26,8 @@ jobs:
 
       - name: lint workflows and actions
         run: |
-          go install github.com/rhysd/actionlint/cmd/actionlint@latest
+          . versions.env
+          go install "github.com/rhysd/actionlint/cmd/actionlint@$VER_ACTIONLINT"
           "$(go env GOPATH)/bin/actionlint"
 
       - uses: ./actions/xk6-build
@@ -101,11 +108,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: build the cikit image from this commit
+        run: docker build -t cikit:test .
       - name: gitlab-ci-local
         run: |
-          npm install -g gitlab-ci-local@4.76.0
+          . versions.env
+          npm install -g "gitlab-ci-local@$VER_GITLAB_CI_LOCAL"
           git remote set-head origin --auto || true
-          gitlab-ci-local --concurrency 4
+          gitlab-ci-local --concurrency 4 --variable CIKIT_IMAGE=cikit:test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./actions/go-lint
+        with:
+          working-directory: testdata/gomod
+      - name: go-lint catches a lint error
+        run: |
+          if bin/go-lint --dir testdata/golint; then echo "::error::lint error passed"; exit 1; fi
 
   security:
     runs-on: ubuntu-latest
@@ -116,3 +137,31 @@ jobs:
           working-directory: testdata/gomod
       - name: gosec report exists
         run: test -f testdata/gomod/gosec.json
+
+  image:
+    needs: [go, actions, scripts, gitlab, lint, security]
+    if: >-
+      github.event_name == 'schedule' || (github.event_name != 'pull_request' &&
+      contains(fromJSON('["main", "next", "v1"]'), github.ref_name))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ github.event_name == 'schedule' && 'v1' || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'v1' || github.ref }}
+      - name: build and push ghcr.io/${{ github.repository }}:${{ env.TAG }}
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -t "$image:$TAG" -t "$image:sha-$(git rev-parse --short HEAD)" .
+          docker run --rm "$image:$TAG" bash -c 'test -x /opt/cikit/bin/go-check && govulncheck -version && golangci-lint --version'
+          docker push "$image:$TAG"
+          docker push "$image:sha-$(git rev-parse --short HEAD)"
+          echo "### Image: \`$image:$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+

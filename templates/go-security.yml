@@ -1,0 +1,55 @@
+# GitLab CI/CD component: govulncheck (blocking) and gosec (Code Quality widget; blocking with gosec_fail)
+#   include:
+#     - component: $CI_SERVER_FQDN/tools/ci/go-security@v1
+spec:
+  inputs:
+    job:
+      default: go-security
+      description: Name of the job this component adds.
+    stage:
+      default: test
+    image:
+      default: ghcr.io/dmitry-fedotov-dev/ci:v1
+      description: The cikit image (or its mirror in your registry); it carries the scripts and tools.
+    dir:
+      default: .
+    packages:
+      default: ./...
+    govulncheck:
+      type: boolean
+      default: true
+    gosec_fail:
+      type: boolean
+      default: false
+    gosec_args:
+      default: ""
+      description: e.g. -exclude=G115
+    lang:
+      default: en
+      options: [en, ru]
+---
+$[[ inputs.job ]]:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  variables:
+    GOMODCACHE: $CI_PROJECT_DIR/.cache/gomod
+    GOCACHE: $CI_PROJECT_DIR/.cache/gobuild
+  cache:
+    key: cikit-go-$CI_JOB_NAME_SLUG
+    paths: [.cache/gomod, .cache/gobuild]
+  script:
+    - export CIKIT="${CIKIT_LOCAL:-${CIKIT_HOME:-/opt/cikit}}"
+    # quoted: an unquoted ": " would turn this line into a YAML mapping
+    - 'test -x "$CIKIT/bin/go-check" || { echo "image $[[ inputs.image ]] has no cikit scripts - use ghcr.io/dmitry-fedotov-dev/ci or its mirror"; exit 1; }'
+    - |
+      set -- --dir "$[[ inputs.dir ]]" --packages "$[[ inputs.packages ]]" --gosec-args "$[[ inputs.gosec_args ]]" --lang $[[ inputs.lang ]] --codequality gl-code-quality-report.json
+      [ "$[[ inputs.govulncheck ]]" = true ] || set -- "$@" --no-govulncheck
+      [ "$[[ inputs.gosec_fail ]]" != true ] || set -- "$@" --gosec-fail
+      "$CIKIT/bin/go-security" "$@"
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    paths: [ci-summary.md]
+    expose_as: gosec summary
+    expire_in: 2 weeks

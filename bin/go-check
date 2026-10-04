@@ -46,8 +46,9 @@ extra=()
 [ -z "$cover" ] || extra=(-coverprofile "$cover")
 status=0
 if [ -n "$junit" ]; then
+  ci_go_install gotestsum "gotest.tools/gotestsum@$VER_GOTESTSUM"
   # shellcheck disable=SC2086
-  go run gotest.tools/gotestsum@v1.13.0 --format testname --junitfile "$junit" -- $flags "${extra[@]}" $pkgs || status=$?
+  gotestsum --format testname --junitfile "$junit" -- $flags "${extra[@]}" $pkgs || status=$?
 else
   # shellcheck disable=SC2086
   go test $flags "${extra[@]}" $pkgs || status=$?

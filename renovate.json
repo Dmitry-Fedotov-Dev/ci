@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "description": "Tool versions live in versions.env; images in the Dockerfile; actions in workflows.",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "versions.env: a '# renovate:' comment above each VER_* line",
+      "managerFilePatterns": ["/^versions\\.env$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[A-Z0-9_]+=(?<currentValue>\\S+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "One PR for all CI tool bumps a week, so selftest checks them together",
+      "matchManagers": ["custom.regex"],
+      "groupName": "CI tools",
+      "schedule": ["before 6am on monday"]
+    }
+  ]
+}
