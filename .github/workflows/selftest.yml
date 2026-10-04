@@ -5,6 +5,7 @@ name: selftest
 
 on:
   push: # every branch: a release candidate is tested on its own branch before main
+    branches-ignore: ["renovate/**"] # Renovate branches are tested once, by their pull request
   pull_request:
   schedule:
     # weekly: rebuild the image on v1 with the latest Go patch release — govulncheck reports
