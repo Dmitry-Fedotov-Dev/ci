@@ -14,7 +14,7 @@
 #   docker build --secret id=ca,src=corp-ca.pem -t cikit .
 
 FROM golang:1.27-trixie AS go
-FROM node:22-trixie AS node
+FROM node:24-trixie AS node
 FROM koalaman/shellcheck:v0.11.0 AS shellcheck
 FROM prom/prometheus:v3.5.0 AS prometheus
 
