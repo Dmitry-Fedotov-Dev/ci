@@ -1,8 +1,78 @@
 # ci
 
-A portable CI kit for Go services: Go checks, golangci-lint, security scans, a k6 build with
-extensions, k6 result summaries, and checks for embedded pages and monitoring configs. One set
-of scripts, one image, four ways to run them:
+Ready-made CI for Go projects: tests, linter, security scans, k6 load-test builds and reports,
+checks for embedded pages and monitoring configs. Public and MIT-licensed — **any repository
+can use it**, on GitHub, GitLab or a laptop; nothing to install, nothing to register.
+
+Its other half is [**cd**](https://github.com/Dmitry-Fedotov-Dev/cd): `ci` checks a change,
+`cd` delivers it to a server.
+
+## Quick start
+
+**GitHub** — in the root of your Go repository:
+
+```sh
+mkdir -p .github/workflows && curl -fsSL https://raw.githubusercontent.com/Dmitry-Fedotov-Dev/ci/v1/starters/github-go.yml -o .github/workflows/ci.yml && git add .github && git commit -m "CI" && git push
+```
+
+The next push and every pull request run three jobs: `go` (gofmt, vet, tests), `lint`
+(golangci-lint), `security` (govulncheck, gosec). Results land in the job summary. Open
+`.github/workflows/ci.yml` to switch on the commented-out steps or delete what you do not need.
+
+**GitLab** (any version, runners with internet):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Dmitry-Fedotov-Dev/ci/v1/starters/gitlab-go.yml -o .gitlab-ci.yml && git add .gitlab-ci.yml && git commit -m "CI" && git push
+```
+
+Test results, coverage and lint findings appear in the merge request.
+
+**Locally**, before pushing — the same checks in the same image:
+
+```sh
+docker run --rm -v "$PWD:/src" -w /src ghcr.io/dmitry-fedotov-dev/ci:v1 go-lint
+```
+
+**And deploy** — add a [cd](https://github.com/Dmitry-Fedotov-Dev/cd) job to the same workflow, after the checks
+(`needs: [go, lint, security]`); the server owner allows your repository once.
+
+## How a project uses it
+
+```
+your repository                         Dmitry-Fedotov-Dev/ci @v1
+.github/workflows/ci.yml  ── uses: ──►  actions/go-lint, actions/go-security, workflows/go.yml
+.gitlab-ci.yml            ── include ►  gitlab/ci.yml (templates) or templates/ (components)
+laptop / other CI         ── runs ───►  ghcr.io/dmitry-fedotov-dev/ci:v1  or  bin/<step>
+                                              │
+                                              ▼   every wrapper only maps inputs to flags
+                                        bin/<step>  — the actual check, the same everywhere
+                                              │
+                                              ▼
+                                        versions.env — tool versions, pinned
+
+push ─► ci: go · lint · security (+ k6, web, monitoring if enabled) ─► all green ─► cd: deploy
+```
+
+- The project keeps **one small file** (`ci.yml` / `.gitlab-ci.yml`) that names steps and
+  passes settings. All logic and tool versions live here, so a fix in this repository reaches
+  every project on its next run.
+- `@v1` follows compatible releases (fixes, new optional steps, tool updates checked by
+  selftest); pin `@v1.x.y` to never move. A breaking change becomes `v2`, and projects
+  switch when they choose.
+- A project's own config wins: `.golangci.yml` in the repository replaces
+  [the default](config/golangci.yml).
+
+| | What it adds in a project |
+|---|---|
+| **Go service / library** | `go` + `lint` + `security` — the quick start above |
+| **k6 extension** (e.g. xk6-sip) | `xk6-build` builds k6 with it; `k6-summary` turns test runs into a readable report |
+| **Pages embedded in the binary** | `inline-js` — syntax check of `.js` and `<script>` in `.html` |
+| **Prometheus / Grafana configs** | `promtool` (config + alert rule tests), `dashboards-sync` (generated dashboards are up to date) |
+
+In use by [kontakt](https://github.com/Dmitry-Fedotov-Dev/kontakt) and
+[xk6-sip](https://github.com/Dmitry-Fedotov-Dev/xk6-sip).
+
+## Layout
 
 | Where | How | What you write in the project |
 |---|---|---|
@@ -25,10 +95,7 @@ starters/       pipelines to copy into a new project
 testdata/       what the selftests run against
 ```
 
-Used by [kontakt](https://github.com/Dmitry-Fedotov-Dev/kontakt) and
-[xk6-sip](https://github.com/Dmitry-Fedotov-Dev/xk6-sip).
-
-## New project
+## Setting up in detail
 
 Copy a starter and delete what you do not need:
 
